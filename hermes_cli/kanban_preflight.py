@@ -285,6 +285,46 @@ def family_of(provider: Optional[str]) -> Optional[str]:
     return _PROVIDER_FAMILY.get(str(provider).strip().lower())
 
 
+# Chaves onde os workers do board REALMENTE gravam a rota. Medido no kanban.db
+# de producao (315 runs terminados com metadata): `provider` aparece em 1,
+# `reviewer.provider` em 0 -- ler so essas duas era ler quase nada. As demais
+# guardam texto livre do tipo "gpt-6-astra/openai-codex" ou
+# "claude-opus-5 / anthropic, agente direto, OAuth assinatura".
+_ROUTE_METADATA_KEYS = (
+    "provider", "model", "modelo", "rota", "route", "engine",
+    "modelo_efetivo", "reviewer_model", "writer",
+)
+
+
+def provider_in_text(text: Optional[str]) -> Optional[str]:
+    """Primeiro provider CONHECIDO citado em texto livre, ou ``None``.
+
+    So reconhece nomes do ``_PROVIDER_FAMILY``: um modelo solto ("grok-4.6")
+    NAO vira provider por adivinhacao -- quem chama declara nao-medido. Casa do
+    nome mais longo para o curto, senao "openai-codex" seria lido como "openai"
+    (familia igual hoje, mas rota e custo diferentes) e a extracao mentiria
+    sobre qual credencial foi usada.
+    """
+    if not text:
+        return None
+    low = str(text).lower()
+    for name in sorted(_PROVIDER_FAMILY, key=len, reverse=True):
+        idx = low.find(name)
+        if idx < 0:
+            continue
+        # Fronteira: o vizinho nao pode ser [a-z0-9_] -- sem isto "anthropic"
+        # casaria dentro de "anthropic-vertex" (ja resolvido pela ordem) e,
+        # pior, "nous" casaria dentro de palavras como "nousual".
+        before = low[idx - 1] if idx > 0 else ""
+        after = low[idx + len(name):idx + len(name) + 1]
+        if before.isalnum() or before == "_":
+            continue
+        if after.isalnum() or after == "_":
+            continue
+        return name
+    return None
+
+
 def _pool_auth_types(home: Path, provider: Optional[str]) -> set:
     """Tipos de autenticacao presentes no pool do provider (``oauth``/``api_key``).
 
@@ -473,6 +513,20 @@ def preflight(
             f"Review route is the same model family as the authoring route "
             f"({eff_family}); this is NOT cross-family review.",
             "State this condition explicitly in the review verdict.",
+        ))
+    elif lane == "review" and not author_family:
+        # Ausencia de medicao NAO e ausencia de achado: sem esta linha, um run
+        # de autoria que nao gravou a rota produzia o mesmo silencio de um run
+        # comprovadamente de outra familia, e quem lesse concluiria "sem
+        # conflito". Nao-bloqueante: o dispatcher nao para a fila por metadata
+        # incompleta de um run que ja terminou.
+        findings.append(Finding(
+            "author_family_not_measured", False,
+            "Authoring route is NOT MEASURED (the finished run recorded no "
+            "recognisable provider), so family independence could not be "
+            "checked: this review may or may not be cross-family.",
+            "Do not claim cross-family review; record provider in the run "
+            "metadata so the next review can measure it.",
         ))
 
     # Cobertura financeira nunca e afirmada aqui, e dizer isso e parte do

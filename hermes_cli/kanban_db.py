@@ -233,6 +233,10 @@ _TICK_ACTIVITY_FIELDS = (
     "timed_out", "auto_blocked", "rate_limited", "auto_assigned_default",
     "respawn_guarded", "skipped_per_profile_capped", "skipped_unassigned",
     "skipped_nonspawnable",
+    # Um tick que SO recusou no preflight trabalhou: ele impediu gasto de modelo
+    # e gravou motivo por card. Fora desta tupla ele contaria como "idle", e a
+    # telemetria de saude leria como "correctly idle" a recusa de N cards.
+    "preflight_refused",
 )
 
 

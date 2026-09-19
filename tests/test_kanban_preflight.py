@@ -307,6 +307,93 @@ def test_mesma_familia_na_lane_ready_nao_emite_declaracao(tmp_path):
     assert not any(f.code == "same_family_review" for f in v.findings)
 
 
+def test_autoria_nao_medida_e_declarada_em_vez_de_silencio(tmp_path):
+    """Sem provider de autoria, o veredito DIZ que nao mediu.
+
+    Antes, ``author_provider=None`` produzia exatamente o mesmo silencio de uma
+    revisao comprovadamente cruzada, e quem lesse concluiria "sem conflito de
+    familia". Ausencia de medicao nao e ausencia de achado.
+    """
+    home = make_profile(tmp_path, "revisor", pool={"anthropic": [oauth_ok()]},
+                        model="claude-opus-5", provider="anthropic")
+    v = pf.preflight(task_id="t", assignee="revisor", lane="review",
+                     author_provider=None,
+                     home_resolver=resolver_for({"revisor": home}))
+    assert v.ok, "nao-medido nao pode parar a fila"
+    nm = [f for f in v.findings if f.code == "author_family_not_measured"]
+    assert len(nm) == 1
+    assert nm[0].blocking is False
+    assert "NOT MEASURED" in nm[0].message
+    assert "Do not claim cross-family" in nm[0].next_action
+
+
+def test_controle_negativo_autoria_medida_nao_emite_nao_medido(tmp_path):
+    """O par do caso acima: medido de verdade, o aviso cala.
+
+    Um aviso que acende sempre e tao inutil quanto um que nunca acende.
+    """
+    home = make_profile(tmp_path, "revisor", pool={"anthropic": [oauth_ok()]},
+                        model="claude-opus-5", provider="anthropic")
+    for autor in ("openai-codex", "anthropic"):
+        v = pf.preflight(task_id="t", assignee="revisor", lane="review",
+                         author_provider=autor,
+                         home_resolver=resolver_for({"revisor": home}))
+        assert not any(f.code == "author_family_not_measured" for f in v.findings), autor
+
+
+def test_nao_medido_nao_polui_a_lane_ready(tmp_path):
+    """A lane ready nao tem autoria para medir; avisar ali seria ruido."""
+    home = make_profile(tmp_path, "executor", pool={"anthropic": [oauth_ok()]},
+                        model="claude-opus-5", provider="anthropic")
+    v = pf.preflight(task_id="t", assignee="executor", lane="ready",
+                     home_resolver=resolver_for({"executor": home}))
+    assert not any(f.code == "author_family_not_measured" for f in v.findings)
+
+
+# --------------------------------------------------------------------------
+# Extracao do provider da AUTORIA a partir do metadata que os workers gravam
+# --------------------------------------------------------------------------
+
+def test_provider_em_texto_livre_le_os_formatos_reais_do_board():
+    """Formatos COPIADOS do kanban.db de producao (runs ja terminados).
+
+    A versao anterior lia so ``metadata.provider``, presente em 1 de 315 runs
+    com metadata; o resto grava a rota em texto livre e devolvia ``None``.
+    """
+    reais = {
+        "gpt-6-astra/openai-codex": "openai-codex",
+        "gpt-6-astra / openai-codex OAuth direto; sem wrappers": "openai-codex",
+        "claude-opus-5 / anthropic, agente direto, OAuth assinatura": "anthropic",
+        "claude-opus-5 nativo Hermes, sem wrapper ask-*/dev-*": None,
+        "anthropic/claude-opus-5 OAuth assinatura": "anthropic",
+    }
+    for texto, esperado in reais.items():
+        assert pf.provider_in_text(texto) == esperado, texto
+
+
+def test_provider_em_texto_livre_nao_adivinha_por_nome_de_modelo():
+    """``grok-4.6`` sozinho NAO vira provider.
+
+    Adivinhar aqui seria trocar nao-medido por um palpite que depois viraria
+    "familia verificada" no veredito.
+    """
+    assert pf.provider_in_text("grok-4.6") is None
+    assert pf.provider_in_text("gpt-6-astra") is None
+    assert pf.provider_in_text("") is None
+    assert pf.provider_in_text(None) is None
+
+
+def test_provider_em_texto_livre_prefere_o_nome_mais_longo():
+    """``openai-codex`` nao pode ser lido como ``openai``: rotas e custos
+    diferentes, ainda que a familia hoje coincida."""
+    assert pf.provider_in_text("rota openai-codex") == "openai-codex"
+    assert pf.provider_in_text("rota xai-oauth") == "xai-oauth"
+
+
+def test_provider_em_texto_livre_respeita_fronteira_de_palavra():
+    assert pf.provider_in_text("isso e inusual e nao cita provider") is None
+
+
 @pytest.mark.parametrize("provider,familia", [
     ("openai-codex", "GPT"), ("anthropic", "Claude"), ("xai-oauth", "Grok"),
     ("google", "Gemini"), ("nous", "Hermes"), ("desconhecido", None), (None, None),

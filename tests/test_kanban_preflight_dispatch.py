@@ -70,6 +70,17 @@ def tick(conn, spawns, **kw):
     return kdd.dispatch_once(conn, spawn_fn=spawns_fn(spawns), **kw)
 
 
+def _imprime_dispatch(result):
+    """Imprime EXATAMENTE o que ``hermes kanban dispatch`` imprime.
+
+    Chama a funcao do CLI, nunca uma copia do texto: reproduzir o formato aqui
+    provaria apenas que o teste sabe escrever a string que ele mesmo espera.
+    """
+    from hermes_cli.kanban_ops import print_dispatch_result
+
+    print_dispatch_result(result)
+
+
 # --------------------------------------------------------------------------
 # MUTANTE DO MECANISMO: sem o preflight, o mesmo card spawna
 # --------------------------------------------------------------------------
@@ -111,7 +122,13 @@ def test_negativo_credencial_429_sem_fallback_nao_spawna(board, tmp_path, monkey
 
 
 def test_negativo_perfil_inexistente_nao_spawna(board, tmp_path, monkeypatch):
-    """Caso t_aee9533c: assignee 'reviewer' quando o perfil e 'revisor'."""
+    """Caso t_aee9533c: assignee 'reviewer' quando o perfil e 'revisor'.
+
+    Aqui o preflight e isolado DE PROPOSITO da guarda ``_profile_exists_fn``,
+    para medir so o veredito. Isso NAO prova o caso de producao -- quem prova e
+    ``test_producao_perfil_inexistente_nao_e_anunciado_como_ok`` abaixo, que
+    roda com a guarda REAL.
+    """
     home = make_profile(tmp_path, "revisor", pool={"anthropic": [oauth_ok()]},
                         model="claude-opus-5", provider="anthropic")
     # 'reviewer' EXISTE para o dispatcher mas nao para o preflight: e assim que
@@ -125,6 +142,66 @@ def test_negativo_perfil_inexistente_nao_spawna(board, tmp_path, monkeypatch):
 
     assert spawns == []
     assert [t for t, _ in result.preflight_refused] == [task_id]
+
+
+def test_producao_perfil_inexistente_nao_e_anunciado_como_ok(board, tmp_path,
+                                                             monkeypatch, capsys):
+    """CASO A no caminho REAL: ``_profile_exists_fn`` NAO e falseado.
+
+    No dispatcher de verdade quem intercepta o assignee errado e a guarda de
+    perfil (``:1869``), ANTES do preflight -- o card cai em
+    ``skipped_nonspawnable`` e o preflight nunca opina. Isso e correto (nao ha
+    perfil para ler), mas a superficie do operador anunciava esse balde como
+    "terminal lane, OK", entao um nome digitado errado se apresentava como
+    situacao normal e o card ficava em ``ready`` para sempre.
+
+    O que este caso exige: o card NAO spawna E o texto do ``hermes kanban
+    dispatch`` nomeia o card e manda conferir, sem dizer "OK".
+    """
+    make_profile(tmp_path, "revisor", pool={"anthropic": [oauth_ok()]},
+                 model="claude-opus-5", provider="anthropic")
+    # Guarda de perfil REAL: 'revisor' existe nesta casa, 'reviewer' nao.
+    from hermes_cli import profiles as prof
+    monkeypatch.setattr(prof, "profile_exists", lambda n: n == "revisor")
+    task_id = novo_card(board, "reviewer")
+    spawns = Spawns()
+    result = tick(board, spawns)
+
+    assert spawns == [], "assignee inexistente nao pode spawnar"
+    assert result.skipped_nonspawnable == [task_id]
+
+    _imprime_dispatch(result)
+    saida = capsys.readouterr().out
+    assert task_id in saida, "o card recusado tem de ser NOMEADO ao operador"
+    assert "profile list" in saida, "falta a proxima acao verificavel"
+    # O mutante do texto: era isto que fazia o erro passar por normalidade.
+    assert "OK)" not in saida, "um assignee digitado errado nao pode sair como OK"
+
+
+def test_controle_positivo_lane_de_controle_continua_silenciosa_de_erro(
+        board, tmp_path, monkeypatch, capsys):
+    """O par do caso acima: a lane de controle legitima nao vira alarme.
+
+    Sem este controle, "avisar sobre nonspawnable" poderia ter sido implementado
+    como erro/bloqueio, e um setup multi-lane saudavel passaria a gritar todo
+    tick. O texto avisa e explica as DUAS causas; o card nao e recusado nem
+    marcado como falha.
+    """
+    make_profile(tmp_path, "executor", pool={"anthropic": [oauth_ok()]},
+                 model="claude-opus-5", provider="anthropic")
+    from hermes_cli import profiles as prof
+    monkeypatch.setattr(prof, "profile_exists", lambda n: n == "executor")
+    task_id = novo_card(board, "orion-cc")  # terminal Claude Code, puxa sozinho
+    result = tick(board, Spawns())
+
+    assert result.skipped_nonspawnable == [task_id]
+    assert result.preflight_refused == [], "lane de controle nao e recusa"
+    assert result.auto_blocked == [] and result.crashed == []
+
+    _imprime_dispatch(result)
+    saida = capsys.readouterr().out
+    assert "control-plane" in saida, "o operador precisa saber que isto e esperado"
+    assert "IDENTICAL" in saida, "as duas causas tem de ser distinguidas por ele"
 
 
 def test_negativo_rota_paga_nao_spawna(board, tmp_path, monkeypatch):
@@ -303,3 +380,170 @@ def test_tick_inteiro_nao_abre_socket(board, tmp_path, monkeypatch):
     spawns = Spawns()
     tick(board, spawns)
     assert len(spawns) == 1
+
+
+# --------------------------------------------------------------------------
+# A recusa chega ao operador: texto, --json e contagem de atividade do tick
+# --------------------------------------------------------------------------
+
+def test_recusa_aparece_no_texto_e_no_json_do_dispatch(board, tmp_path,
+                                                       monkeypatch, capsys):
+    """Um card recusado tem de ser VISIVEL nas duas saidas do CLI.
+
+    O evento em ``task_events`` ja existia, mas o operador le o tick. Sem isto a
+    recusa so aparecia para quem soubesse consultar a tabela.
+    """
+    from hermes_cli.kanban_ops import dispatch_result_payload
+
+    home = make_profile(tmp_path, "executor", pool={"openai-codex": [oauth_429()]},
+                        model="gpt-6-astra", provider="openai-codex", fallbacks=[])
+    rota(monkeypatch, {"executor": home})
+    task_id = novo_card(board, "executor")
+    result = tick(board, Spawns())
+
+    assert [t for t, _ in result.preflight_refused] == [task_id]
+
+    payload = dispatch_result_payload(result)
+    assert payload["preflight_refused"] == [
+        {"task_id": task_id, "reason": dict(result.preflight_refused)[task_id]}
+    ]
+    # A proxima acao viaja junto: o JSON sozinho tem de bastar para agir.
+    assert "route this task" in payload["preflight_refused"][0]["reason"]
+
+    _imprime_dispatch(result)
+    saida = capsys.readouterr().out
+    assert task_id in saida
+    assert "Preflight refused" in saida
+    assert "route this task" in saida
+
+
+def test_tick_que_so_recusou_nao_conta_como_ocioso(board, tmp_path, monkeypatch):
+    """``preflight_refused`` e ATIVIDADE do tick.
+
+    Fora de ``_TICK_ACTIVITY_FIELDS``, um tick que recusou N cards reportava
+    ``outcome='idle'`` -- o mesmo sinal que a telemetria de saude usa para
+    dizer "correctly idle". Recusar 10 cards nao e ficar parado.
+    """
+    from hermes_cli import kanban_db as kb_mod
+
+    home = make_profile(tmp_path, "executor", pool={"openai-codex": [oauth_429()]},
+                        model="gpt-6-astra", provider="openai-codex", fallbacks=[])
+    rota(monkeypatch, {"executor": home})
+    novo_card(board, "executor")
+    result = tick(board, Spawns())
+
+    assert result.preflight_refused, "pre-condicao: o tick recusou"
+    ativos = [f for f in kb_mod._TICK_ACTIVITY_FIELDS if getattr(result, f)]
+    assert ativos == ["preflight_refused"], (
+        f"so a recusa deveria marcar atividade neste tick; ativos={ativos}")
+
+
+def test_controle_positivo_tick_realmente_vazio_continua_ocioso(board, tmp_path,
+                                                                monkeypatch):
+    """O par do caso acima: sem card nenhum, o tick SEGUE ocioso.
+
+    Sem este controle, incluir o campo poderia ter sido implementado de um jeito
+    que marca atividade sempre, e "ocioso" deixaria de existir.
+    """
+    from hermes_cli import kanban_db as kb_mod
+
+    home = make_profile(tmp_path, "executor", pool={"anthropic": [oauth_ok()]},
+                        model="claude-opus-5", provider="anthropic")
+    rota(monkeypatch, {"executor": home})
+    result = tick(board, Spawns())  # board vazio
+
+    ativos = [f for f in kb_mod._TICK_ACTIVITY_FIELDS if getattr(result, f)]
+    assert ativos == [], f"tick sem card algum tem de ser ocioso; ativos={ativos}"
+
+
+# --------------------------------------------------------------------------
+# _authoring_provider: extracao sobre task_runs REAL (nao author_provider literal)
+# --------------------------------------------------------------------------
+
+def _run_terminado(conn, task_id, metadata):
+    """Grava um run JA ENCERRADO com este metadata e devolve seu id.
+
+    Escreve direto na tabela porque o que se mede aqui e a LEITURA de
+    ``task_runs`` -- passar pelo lifecycle acoplaria o caso a ele.
+    ``status='done'`` e NOT NULL no schema e e o estado de um run encerrado.
+    """
+    cur = conn.execute(
+        "INSERT INTO task_runs (task_id, status, started_at, ended_at, metadata) "
+        "VALUES (?, 'done', ?, ?, ?)",
+        (task_id, time.time() - 60, time.time(), json.dumps(metadata)),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def test_authoring_provider_le_o_metadata_que_os_workers_gravam(board):
+    """Cada caso e um metadata COPIADO do kanban.db de producao."""
+    casos = [
+        ({"provider": "anthropic"}, "anthropic"),
+        ({"reviewer": {"provider": "openai-codex"}}, "openai-codex"),
+        ({"model": "gpt-6-astra/openai-codex"}, "openai-codex"),
+        ({"model": "claude-opus-5 / anthropic, agente direto, OAuth assinatura"},
+         "anthropic"),
+        ({"rota": "anthropic/claude-opus-5 OAuth assinatura"}, "anthropic"),
+        ({"modelo_efetivo": "xai-oauth grok-4.6"}, "xai-oauth"),
+    ]
+    for metadata, esperado in casos:
+        task_id = novo_card(board, "executor")
+        _run_terminado(board, task_id, metadata)
+        assert kdd._authoring_provider(board, task_id) == esperado, metadata
+
+
+def test_authoring_provider_devolve_none_quando_nao_da_para_medir(board):
+    """Controle negativo: sem provider legivel, NAO inventa um.
+
+    Estes sao os metadata mais comuns do board real (``worker_session_id``,
+    ``commit``...). Devolver palpite aqui viraria "familia verificada" no
+    veredito.
+    """
+    for metadata in (
+        {"worker_session_id": "x", "commit": "abc123"},
+        {"modelo": "grok-4.6"},          # modelo sem provider: nao adivinhar
+        {"changed_files": ["a.py"]},
+        {},
+    ):
+        task_id = novo_card(board, "executor")
+        _run_terminado(board, task_id, metadata)
+        assert kdd._authoring_provider(board, task_id) is None, metadata
+
+
+def test_authoring_provider_ignora_run_em_voo_e_usa_o_ultimo_terminado(board):
+    """So run ENCERRADO e autoria; o run aberto e quem esta revisando agora."""
+    task_id = novo_card(board, "executor")
+    _run_terminado(board, task_id, {"model": "gpt-6-astra/openai-codex"})
+    board.execute(
+        "INSERT INTO task_runs (task_id, status, started_at, metadata) "
+        "VALUES (?, 'running', ?, ?)",
+        (task_id, time.time(), json.dumps({"provider": "anthropic"})))
+    board.commit()
+
+    assert kdd._authoring_provider(board, task_id) == "openai-codex"
+
+
+def test_declaracao_de_familia_usa_o_provider_extraido_no_tick_real(
+        board, tmp_path, monkeypatch):
+    """Fecha o circuito: metadata em texto livre -> declaracao no veredito.
+
+    Antes, este mesmo card produzia ``author_provider=None`` e a declaracao
+    nunca era emitida. Verificado pelo veredito que o proprio dispatcher monta.
+    """
+    home = make_profile(tmp_path, "revisor", pool={"anthropic": [oauth_ok()]},
+                        model="claude-opus-5", provider="anthropic")
+    rota(monkeypatch, {"revisor": home})
+    task_id = novo_card(board, "revisor")
+    # Autoria gravada como os workers gravam: texto livre, mesma familia.
+    _run_terminado(board, task_id, {
+        "model": "claude-opus-5 / anthropic, agente direto, OAuth assinatura"})
+
+    row = board.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    veredito = kdd._preflight_verdict(board, row, "revisor", lane="review")
+
+    assert veredito is not None and veredito.ok
+    assert veredito.route["author_family"] == "Claude"
+    codigos = [f.code for f in veredito.findings]
+    assert "same_family_review" in codigos
+    assert "author_family_not_measured" not in codigos

@@ -8,6 +8,7 @@ late-bound via ``_kb`` (import-cycle breaking) so monkeypatching
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import re
 import signal
@@ -112,10 +113,15 @@ class DispatchResult:
     tick before spawning, so telemetry/CLI/dashboard can show the dispatcher
     acting on the fallback rule rather than explicit assignments."""
     skipped_nonspawnable: list[str] = field(default_factory=list)
-    """Ready task ids whose assignee names a control-plane lane (e.g. a Claude
-    Code terminal like ``orion-cc``), not a Hermes profile. Expected steady-state
-    on multi-lane setups, NOT operator-actionable; tracked apart so health
-    telemetry can tell "stuck" from "correctly idle"."""
+    """Ready task ids whose assignee does not resolve to a profile this home can
+    spawn. DUAS causas opostas caem aqui e o dispatcher NAO consegue separa-las:
+    (a) uma lane de controle legitima (ex.: um terminal Claude Code ``orion-cc``)
+    que puxa por ``claim_task``, estado esperado em setup multi-lane; (b) um
+    assignee digitado errado (``reviewer`` quando o perfil e ``revisor``) ou um
+    perfil ausente NESTA casa, que fica em ``ready`` para sempre. Por isso a
+    superficie do operador nao pode chamar este balde de "OK": ela nomeia os
+    cards e manda conferir. Mantido separado de ``skipped_unassigned`` porque a
+    acao corretiva e outra."""
     skipped_per_profile_capped: list[tuple[str, str, int]] = field(default_factory=list)
     """``(task_id, assignee, current_running_count)`` deferred because the
     assignee is at ``kanban.max_in_progress_per_profile``. Picked up on a later
@@ -1787,6 +1793,14 @@ def _authoring_provider(conn: sqlite3.Connection, task_id: str) -> Optional[str]
 
     Only meaningful on the review lane: it answers "who wrote what is now being
     reviewed?", which is what makes the same-family declaration honest.
+
+    Le as chaves que os workers REALMENTE usam, nao so ``metadata.provider``:
+    medido no board atlas, 315 runs terminados tinham metadata e apenas 1 tinha
+    essa chave. O resto grava a rota em texto livre (``model``, ``rota``,
+    ``modelo``...), e ler so a chave canonica era devolver ``None`` quase
+    sempre -- silencio que o chamador lia como "sem conflito de familia".
+    Devolve ``None`` quando o texto nao cita provider conhecido; nao adivinha
+    provider a partir de nome de modelo.
     """
     try:
         row = conn.execute(
@@ -1799,18 +1813,30 @@ def _authoring_provider(conn: sqlite3.Connection, task_id: str) -> Optional[str]
     if row is None or not row["metadata"]:
         return None
     try:
-        import json
         meta = json.loads(row["metadata"])
     except Exception:
         return None
     if not isinstance(meta, dict):
         return None
-    provider = meta.get("provider")
-    if isinstance(provider, str) and provider.strip():
-        return provider.strip()
+    try:
+        from hermes_cli.kanban_preflight import _ROUTE_METADATA_KEYS, provider_in_text
+    except Exception:
+        return None
+
+    # ``reviewer.provider`` primeiro: quando existe, e declaracao estruturada,
+    # nao texto para interpretar.
     reviewer = meta.get("reviewer")
     if isinstance(reviewer, dict) and isinstance(reviewer.get("provider"), str):
-        return reviewer["provider"].strip() or None
+        exact = reviewer["provider"].strip()
+        if exact:
+            return exact
+    for key in _ROUTE_METADATA_KEYS:
+        value = meta.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        found = provider_in_text(value)
+        if found:
+            return found
     return None
 
 

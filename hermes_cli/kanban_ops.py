@@ -11,6 +11,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 from hermes_cli import kanban_db as kb
 from hermes_cli import kanban_db_connect as kbc
@@ -92,29 +93,52 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
             max_in_progress_per_profile=max_in_progress_per_profile,
         )
     if getattr(args, "json", False):
-        _print_json({
-            **{k: getattr(res, k)
-               for k in ("reclaimed", "crashed", "timed_out", "stale", "auto_blocked", "promoted",
-                         "reaped_terminal_workers")},
-            "spawned": [
-                {"task_id": tid, "assignee": who, "workspace": ws} for (tid, who, ws) in res.spawned
-            ],
-            "skipped_unassigned": res.skipped_unassigned,
-            "skipped_nonspawnable": res.skipped_nonspawnable,
-            "skipped_per_profile_capped": [
-                {"task_id": tid, "assignee": who, "current": current}
-                for (tid, who, current) in res.skipped_per_profile_capped
-            ],
-            "auto_assigned_default": res.auto_assigned_default,
-            "respawn_guarded": [
-                {"task_id": tid, "reason": reason}
-                for (tid, reason) in res.respawn_guarded
-            ],
-            "rate_limited": res.rate_limited,
-            "skipped_locked": res.skipped_locked,
-            "memory_pressure": res.memory_pressure,
-        }, ascii=True)
+        _print_json(dispatch_result_payload(res), ascii=True)
         return 0
+    print_dispatch_result(res, dry_run=args.dry_run, default_assignee=default_assignee)
+    return 0
+
+
+def dispatch_result_payload(res) -> dict:
+    """O ``--json`` de ``hermes kanban dispatch``, como dado.
+
+    Funcao propria (e nao dict inline em ``_cmd_dispatch``) para que o teste
+    possa exercitar A MESMA superficie que o operador le. Um teste que remonta
+    o texto por conta propria nao prova nada sobre o que o CLI imprime.
+    """
+    return {
+        **{k: getattr(res, k)
+           for k in ("reclaimed", "crashed", "timed_out", "stale", "auto_blocked", "promoted",
+                     "reaped_terminal_workers")},
+        "spawned": [
+            {"task_id": tid, "assignee": who, "workspace": ws} for (tid, who, ws) in res.spawned
+        ],
+        "skipped_unassigned": res.skipped_unassigned,
+        "skipped_nonspawnable": res.skipped_nonspawnable,
+        "skipped_per_profile_capped": [
+            {"task_id": tid, "assignee": who, "current": current}
+            for (tid, who, current) in res.skipped_per_profile_capped
+        ],
+        "auto_assigned_default": res.auto_assigned_default,
+        "respawn_guarded": [
+            {"task_id": tid, "reason": reason}
+            for (tid, reason) in res.respawn_guarded
+        ],
+        # O motivo ja carrega a proxima acao (``Verdict.reason()`` emite
+        # "<mensagem> -> <acao>"), entao o operador nao precisa ir ao evento.
+        "preflight_refused": [
+            {"task_id": tid, "reason": reason}
+            for (tid, reason) in res.preflight_refused
+        ],
+        "rate_limited": res.rate_limited,
+        "skipped_locked": res.skipped_locked,
+        "memory_pressure": res.memory_pressure,
+    }
+
+
+def print_dispatch_result(res, *, dry_run: bool = False,
+                          default_assignee: Optional[str] = None) -> None:
+    """O texto de ``hermes kanban dispatch``. Ver ``dispatch_result_payload``."""
     print(f"Reclaimed:    {res.reclaimed}")
     if res.reaped_terminal_workers:
         print(f"Reaped workers of finished tasks: {', '.join(res.reaped_terminal_workers)}")
@@ -129,7 +153,7 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
             print(f"  {', '.join(items)}")
     print(f"Promoted:     {res.promoted}")
     print(f"Spawned:      {len(res.spawned)}")
-    tag = " (dry)" if args.dry_run else ""
+    tag = " (dry)" if dry_run else ""
     for tid, who, ws in res.spawned:
         print(f"  - {tid}  ->  {who}  @ {ws or '-'}{tag}")
     if res.auto_assigned_default:
@@ -142,19 +166,30 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
     for tid, who, current in res.skipped_per_profile_capped:
         print(f"Deferred ({who} at per-profile cap, {current} running): {tid}")
     if res.skipped_nonspawnable:
+        # NAO dizer "OK": esta lista mistura a lane de controle legitima com o
+        # assignee digitado errado, e sao acoes opostas. Quem le decide olhando
+        # o nome, entao o texto pede a conferencia em vez de tranquilizar.
         print(
-            f"Skipped (non-spawnable assignee — terminal lane, OK): "
+            f"Skipped (assignee is not a spawnable profile here): "
             f"{', '.join(res.skipped_nonspawnable)}"
+        )
+        print(
+            "  Expected for control-plane lanes that pull via `claim_task`; "
+            "a typo or a profile missing from this home looks IDENTICAL. "
+            "Confirm with `hermes profile list`."
         )
     for tid, reason in res.respawn_guarded:
         print(f"Guarded ({reason}): {tid}")
+    for tid, reason in res.preflight_refused:
+        # Recusado ANTES do spawn: nenhum modelo foi chamado. O motivo ja traz a
+        # proxima acao; sem esta linha o tick parecia ocioso e o card, esquecido.
+        print(f"Preflight refused (no model call): {tid}  -  {reason}")
     if res.rate_limited:
         print(f"Rate-limited (released to ready, no failure counted): {', '.join(res.rate_limited)}")
     if res.skipped_locked:
         print("Skipped: another dispatcher holds this board's lock (no writes this tick)")
     if res.memory_pressure:
         print(f"Memory pressure {res.memory_pressure}: new workers restricted this tick")
-    return 0
 
 
 _DAEMON_DEPRECATED = (
