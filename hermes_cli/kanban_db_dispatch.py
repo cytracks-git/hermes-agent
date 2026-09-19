@@ -120,6 +120,11 @@ class DispatchResult:
     """``(task_id, assignee, current_running_count)`` deferred because the
     assignee is at ``kanban.max_in_progress_per_profile``. Picked up on a later
     tick; separate bucket so dashboards show "profile busy" vs "stuck"."""
+    preflight_refused: list[tuple[str, str]] = field(default_factory=list)
+    """``(task_id, reason)`` refused by the dispatch preflight BEFORE any model
+    call: unknown assignee, unusable auth route, or a paid fallback that is not
+    an authorised automatic route. Each entry carries the operator-readable
+    reason and its next action, so the card never parks in silence."""
     crashed: list[str] = field(default_factory=list)
     """Task ids reclaimed because their worker PID disappeared."""
     auto_blocked: list[str] = field(default_factory=list)
@@ -1777,6 +1782,65 @@ def _call_spawn_fn(spawn_fn, task: Task, workspace: str, board: Optional[str]) -
         return spawn_fn(task, workspace)
 
 
+def _authoring_provider(conn: sqlite3.Connection, task_id: str) -> Optional[str]:
+    """Provider of the most recent FINISHED run — the authoring route.
+
+    Only meaningful on the review lane: it answers "who wrote what is now being
+    reviewed?", which is what makes the same-family declaration honest.
+    """
+    try:
+        row = conn.execute(
+            "SELECT metadata FROM task_runs WHERE task_id = ? AND ended_at IS NOT NULL "
+            "ORDER BY ended_at DESC, id DESC LIMIT 1",
+            (task_id,),
+        ).fetchone()
+    except Exception:
+        return None
+    if row is None or not row["metadata"]:
+        return None
+    try:
+        import json
+        meta = json.loads(row["metadata"])
+    except Exception:
+        return None
+    if not isinstance(meta, dict):
+        return None
+    provider = meta.get("provider")
+    if isinstance(provider, str) and provider.strip():
+        return provider.strip()
+    reviewer = meta.get("reviewer")
+    if isinstance(reviewer, dict) and isinstance(reviewer.get("provider"), str):
+        return reviewer["provider"].strip() or None
+    return None
+
+
+def _preflight_verdict(conn: sqlite3.Connection, row: sqlite3.Row, assignee: str, *, lane: str):
+    """Run the dispatch preflight, or ``None`` when it cannot run at all.
+
+    FAIL-OPEN on its own failure: a preflight that cannot be imported or that
+    raises must never hold a card the dispatcher would otherwise spawn. A guard
+    that parks work when IT breaks is worse than the defect it prevents — only
+    a verdict it actually produced may refuse a dispatch.
+    """
+    try:
+        from hermes_cli.kanban_preflight import preflight
+    except Exception:
+        return None
+    try:
+        keys = row.keys()
+        return preflight(
+            task_id=row["id"],
+            assignee=assignee,
+            requested_model=row["model_override"] if "model_override" in keys else None,
+            requested_provider=row["provider_override"] if "provider_override" in keys else None,
+            author_provider=_authoring_provider(conn, row["id"]) if lane == "review" else None,
+            lane=lane,
+        )
+    except Exception:
+        # Sem logger de modulo aqui; o veredito nao-medido ja e fail-open.
+        return None
+
+
 def _dispatch_lane_task(
     conn: sqlite3.Connection,
     row: sqlite3.Row,
@@ -1832,6 +1896,25 @@ def _dispatch_lane_task(
         # ticks re-query from the DB.
         if per_profile_cap is not None and name:
             per_profile_running[name] = per_profile_running.get(name, 0) + 1
+
+    # Preflight: role/auth/route are verified HERE, before the claim and before
+    # the spawn, because a worker that discovers inside its own prompt that it
+    # cannot run has already spent a model call (measured 19-09: run289 blocked
+    # in 86s; run290 crashed on a 429 whose window was already stamped on disk).
+    # Fail-open by design: an unmeasurable preflight must never park a card that
+    # the dispatcher would otherwise run.
+    verdict = _preflight_verdict(conn, row, assignee, lane=lane)
+    if verdict is not None and not verdict.ok:
+        result.preflight_refused.append((task_id, verdict.reason()))
+        if not dry_run:
+            with _kb.write_txn(conn):
+                _kb._append_event(
+                    conn, task_id, "preflight_refused",
+                    {"reason": verdict.reason(),
+                     "codes": [f.code for f in verdict.blocking],
+                     "route": verdict.route},
+                )
+        return False
 
     if dry_run:
         result.spawned.append((task_id, assignee, ""))
