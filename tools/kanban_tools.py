@@ -616,6 +616,17 @@ def _handle_complete(args: dict, **kw) -> str:
                 f"in-flight (no state change). Retry kanban_complete with the same "
                 f"summary/metadata and either drop these ids from created_cards, or pass "
                 f"created_cards=[] to skip the card-claim check entirely.")
+        except kb.UnpushedWorkError as unpushed_err:
+            return tool_error(
+                f"kanban_complete blocked: workspace has {unpushed_err.unpushed_count} unpushed "
+                f"commit(s) (HEAD: {unpushed_err.head_sha}). Your task is still in-flight "
+                f"(no state change). Run `git push` in the workspace and retry kanban_complete.")
+        except kb.UnknownShaError as sha_err:
+            return tool_error(
+                f"kanban_complete blocked: the following commit SHA(s) claimed in metadata "
+                f"cannot be resolved in the workspace: {', '.join(sha_err.unknown_shas)}. "
+                f"Your task is still in-flight (no state change). Provide a valid commit SHA "
+                f"or remove the commit field from metadata, then retry kanban_complete.")
         task = kb.get_task(conn, tid)
         _check(ok, (task.last_failure_error if task else None) or
                f"could not complete {tid} (unknown id, stale run, or already terminal)")

@@ -2637,6 +2637,39 @@ class LiveClaimError(ValueError):
         )
 
 
+_HEX_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+_PROSE_SHA_RE = re.compile(r"\b[0-9a-f]{40}\b")
+
+
+class UnpushedWorkError(ValueError):
+    """``complete_task`` refused: workspace has unpushed commits that are
+    unreachable from any remote-tracking branch. A ``ValueError`` so tool error
+    handlers treat it as recoverable."""
+
+    def __init__(self, unpushed_count: int, head_sha: str, completing_task_id: str):
+        self.unpushed_count = unpushed_count
+        self.head_sha = head_sha
+        self.completing_task_id = completing_task_id
+        super().__init__(
+            f"completion blocked: workspace has {unpushed_count} unpushed commit(s) "
+            f"(HEAD: {head_sha}) not found on any remote. Run `git push` and retry."
+        )
+
+
+class UnknownShaError(ValueError):
+    """``complete_task`` refused: metadata claimed commit SHA(s) that cannot
+    be resolved in the workspace. A ``ValueError`` so tool error handlers
+    treat it as recoverable."""
+
+    def __init__(self, unknown_shas: list[str], completing_task_id: str):
+        self.unknown_shas = list(unknown_shas)
+        self.completing_task_id = completing_task_id
+        super().__init__(
+            f"completion blocked: metadata claimed commit SHA(s) that cannot be resolved "
+            f"in workspace: {', '.join(unknown_shas)}"
+        )
+
+
 def _claim_is_live(trow) -> bool:
     """True when a ``running`` task's claim still protects a run: the worker process
     it spawned exists (PID + start-time fingerprint). A claim whose worker is gone,
@@ -2676,6 +2709,8 @@ def complete_task(
         return False
     from hermes_cli.kanban_pr_acceptance_store import prepare_acceptance, record_acceptance
     verified_cards = _gate_created_cards(conn, task_id, created_cards, summary or result)
+    if not force:
+        _gate_completion_evidence(conn, task_id, metadata, summary or result)
     metadata = _merge_completion_prose_artifacts(
         conn, task_id, metadata, summary=summary, result=result,
     )
@@ -2743,6 +2778,7 @@ def complete_task(
             run_id=run_id,
         )
     _flag_phantom_prose_refs(conn, task_id, run_id, summary, result, verified_cards)
+    _flag_suspected_prose_shas(conn, task_id, run_id, summary, result)
     # Success wipes the breaker counter (history stays on the event log).
     _clear_failure_counter(conn, task_id)
     recompute_ready(conn)  # separate txn so children see ``done``
@@ -2777,6 +2813,113 @@ def _gate_created_cards(
             )
         raise HallucinatedCardsError(phantom_cards, task_id)
     return verified_cards
+
+
+def _gate_completion_evidence(
+    conn: sqlite3.Connection,
+    task_id: str,
+    metadata: Optional[dict],
+    preview_text: Optional[str],
+) -> None:
+    """Verify evidence before closing a task.
+
+    Refuses completion when:
+      - The task workspace has unpushed commits unreachable from any remote (UnpushedWorkError).
+      - Typed metadata keys ('commit', 'sha', 'head', 'git_sha', 'commits') claim commit SHA(s)
+        that cannot be resolved in the workspace (UnknownShaError).
+
+    Skipped if no git repo or no remotes (for unpushed check).
+    """
+    from hermes_cli.kanban_db_workspace import _git
+
+    row = conn.execute(
+        "SELECT workspace_path FROM tasks WHERE id = ?",
+        (task_id,),
+    ).fetchone()
+    raw_path = row["workspace_path"] if row else None
+    wp = Path(raw_path).expanduser() if raw_path else None
+
+    # Collect claimed typed commit SHAs
+    claimed_shas: list[str] = []
+    if isinstance(metadata, dict):
+        for k in ("commit", "sha", "head", "git_sha"):
+            v = metadata.get(k)
+            if isinstance(v, str) and v.strip():
+                claimed_shas.append(v.strip())
+            elif v is not None and not isinstance(v, (dict, list, tuple)):
+                claimed_shas.append(str(v).strip())
+        commits = metadata.get("commits")
+        if isinstance(commits, (list, tuple)):
+            for c in commits:
+                if isinstance(c, str) and c.strip():
+                    claimed_shas.append(c.strip())
+                elif c is not None and not isinstance(c, (dict, list, tuple)):
+                    claimed_shas.append(str(c).strip())
+        elif isinstance(commits, str) and commits.strip():
+            claimed_shas.append(commits.strip())
+
+    # Check if workspace is inside a git work tree
+    is_git = False
+    if wp and wp.is_dir():
+        try:
+            res_git = _git(wp, "rev-parse", "--is-inside-work-tree", timeout=5)
+            is_git = bool(res_git and res_git.returncode == 0 and res_git.stdout.strip() == "true")
+        except (subprocess.SubprocessError, OSError):
+            is_git = False
+
+    # 1. Verify typed SHAs (if any claimed)
+    if claimed_shas:
+        unknown_shas: list[str] = []
+        if not is_git or not wp:
+            unknown_shas = list(claimed_shas)
+        else:
+            for s in claimed_shas:
+                if not _HEX_SHA_RE.match(s):
+                    unknown_shas.append(s)
+                else:
+                    try:
+                        res = _git(wp, "cat-file", "-e", f"{s}^{{commit}}", timeout=5)
+                        if res is None or res.returncode != 0:
+                            unknown_shas.append(s)
+                    except (subprocess.SubprocessError, OSError):
+                        unknown_shas.append(s)
+        if unknown_shas:
+            with write_txn(conn):
+                _append_event(
+                    conn, task_id, "completion_blocked_unknown_sha",
+                    {
+                        "unknown_shas": unknown_shas,
+                        "summary_preview": _first_line(preview_text, 200) or None,
+                    },
+                )
+            raise UnknownShaError(unknown_shas, task_id)
+
+    # 2. Verify unpushed commits (only if workspace is a git repo)
+    if is_git and wp:
+        try:
+            res_remotes = _git(wp, "for-each-ref", "--format=%(refname)", "refs/remotes", timeout=5)
+            if res_remotes and res_remotes.returncode == 0 and res_remotes.stdout.strip():
+                res_count = _git(wp, "rev-list", "--count", "HEAD", "--not", "--remotes", timeout=10)
+                if res_count and res_count.returncode == 0:
+                    try:
+                        unpushed_count = int(res_count.stdout.strip() or 0)
+                    except ValueError:
+                        unpushed_count = 0
+                    if unpushed_count > 0:
+                        res_head = _git(wp, "rev-parse", "HEAD", timeout=5)
+                        head_sha = res_head.stdout.strip() if res_head and res_head.returncode == 0 else "unknown"
+                        with write_txn(conn):
+                            _append_event(
+                                conn, task_id, "completion_blocked_unpushed",
+                                {
+                                    "unpushed_commits": unpushed_count,
+                                    "head_sha": head_sha,
+                                    "summary_preview": _first_line(preview_text, 200) or None,
+                                },
+                            )
+                        raise UnpushedWorkError(unpushed_count, head_sha, task_id)
+        except (subprocess.SubprocessError, OSError):
+            pass
 
 
 def _stage_completion_artifacts(
@@ -2848,6 +2991,46 @@ def _flag_phantom_prose_refs(
                 conn, task_id, "suspected_hallucinated_references",
                 {"phantom_refs": phantom_refs, "source": "completion_summary"}, run_id=run_id,
             )
+
+
+def _flag_suspected_prose_shas(
+    conn: sqlite3.Connection, task_id: str, run_id: Optional[int],
+    summary: Optional[str], result: Optional[str],
+) -> None:
+    """Advisory post-commit scan of summary+result for unresolvable 40-hex SHAs;
+    emits ``suspected_unknown_sha_in_prose`` in its own txn so the completion is
+    already durable. Never blocks."""
+    from hermes_cli.kanban_db_workspace import _git
+
+    scan_text = " ".join(filter(None, [summary, result]))
+    if not scan_text:
+        return
+    matches = dict.fromkeys(_PROSE_SHA_RE.findall(scan_text))
+    if not matches:
+        return
+    trow = conn.execute("SELECT workspace_path FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    raw_path = trow["workspace_path"] if trow else None
+    wp = Path(raw_path).expanduser() if raw_path else None
+    if not wp or not wp.is_dir():
+        return
+    try:
+        res_git = _git(wp, "rev-parse", "--is-inside-work-tree", timeout=5)
+        if not res_git or res_git.returncode != 0 or res_git.stdout.strip() != "true":
+            return
+        unknown_prose: list[str] = []
+        for sha in matches:
+            res = _git(wp, "cat-file", "-e", f"{sha}^{{commit}}", timeout=5)
+            if res is None or res.returncode != 0:
+                unknown_prose.append(sha)
+        if unknown_prose:
+            with write_txn(conn):
+                _append_event(
+                    conn, task_id, "suspected_unknown_sha_in_prose",
+                    {"unknown_shas": unknown_prose, "source": "completion_summary"},
+                    run_id=run_id,
+                )
+    except (subprocess.SubprocessError, OSError):
+        return
 
 
 def _merge_completion_prose_artifacts(
