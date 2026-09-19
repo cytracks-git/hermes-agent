@@ -3042,16 +3042,22 @@ def _verify_repo_publication(task_id: str, repo: Path) -> dict:
 
     # A branch do card pode nao existir no remoto (worktree recem-criado) ou ter
     # ficado para tras. A pergunta que importa nao e "esta branch existe la?",
-    # e sim "este commit ja foi publicado?" — entao perguntamos ao remoto por
-    # TODAS as refs que ele anuncia. Continua imune a `update-ref`: a lista vem
+    # e sim "este commit ja foi publicado?" — entao perguntamos ao remoto pelas
+    # demais branches que ele anuncia. Continua imune a `update-ref`: a lista vem
     # do remoto, nao de refs/remotes local.
-    res, err = _probe_git(repo, "ls-remote", remote, timeout=_EVIDENCE_REMOTE_TIMEOUT)
+    #
+    # `--heads` nao e detalhe de performance, e de escala: medido no
+    # NousResearch/hermes-agent, o remoto anuncia 118.677 refs no total (quase
+    # todas refs/pull/*) contra 1.802 branches. Cobrar ancestralidade ref a ref
+    # nesse volume trava o fechamento por minutos.
+    res, err = _probe_git(repo, "ls-remote", "--heads", remote, timeout=_EVIDENCE_REMOTE_TIMEOUT)
     if err:
         raise UnmeasuredEvidenceError("probe_timeout", err, task_id)
     if res.returncode != 0:
         raise UnmeasuredEvidenceError(
             "ls_remote_failed",
-            f"`git ls-remote {remote}` failed in {repo}: {(res.stderr or '').strip()[:300]}",
+            f"`git ls-remote --heads {remote}` failed in {repo}: "
+            f"{(res.stderr or '').strip()[:300]}",
             task_id,
         )
     all_announced = [
@@ -3067,22 +3073,52 @@ def _verify_repo_publication(task_id: str, repo: Path) -> dict:
         }
 
     # Nenhuma ref anunciada pelo remoto contem o HEAD: o trabalho nao esta publicado.
+    #
+    # A CONTAGEM e so o numero que o worker le para saber o tamanho do que
+    # deixou para tras; a DECISAO ja foi tomada acima, pelo ls-remote. Por isso
+    # aqui pode-se usar refs/remotes local como base: um worker que forje essas
+    # refs so estraga o proprio numero, nao consegue fechar o card.
+    # Sem esse desconto o gate dizia "3193 commits" onde havia 3 — medido neste
+    # worktree, cujos objetos das branches remotas nem estao buscados
+    # (`cat-file --batch-check` responde "missing" para elas).
     count = 1
-    if announced:
-        res_count, err = _probe_git(repo, "rev-list", "--count", f"{announced}..HEAD")
-        if err:
-            raise UnmeasuredEvidenceError("probe_error", err, task_id)
-        if res_count.returncode == 0:
-            count = int(res_count.stdout.strip() or 1)
+    base_args = ["rev-list", "--count", "HEAD", "--not", "--remotes"]
+    res_count, err = _probe_git(repo, *base_args)
+    if err:
+        raise UnmeasuredEvidenceError("probe_error", err, task_id)
+    if res_count.returncode == 0:
+        count = int(res_count.stdout.strip() or 1)
     else:
-        res_count, err = _probe_git(
-            repo, "rev-list", "--count", "HEAD", "--not", *all_announced,
-        ) if all_announced else _probe_git(repo, "rev-list", "--count", "HEAD")
+        res_count, err = _probe_git(repo, "rev-list", "--count", "HEAD")
         if err:
             raise UnmeasuredEvidenceError("probe_error", err, task_id)
         if res_count.returncode == 0:
             count = int(res_count.stdout.strip() or 1)
     _raise_unpushed(task_id, count, head_sha, repo, branch)
+
+
+def _known_commits(repo: Path, candidates: list[str]) -> list[str]:
+    """Dos shas anunciados pelo remoto, os que ESTE repo resolve como commit.
+
+    Um sha que o repo local nao tem nao serve nem de prova nem de base de
+    contagem. Filtra em lote: um subprocesso, nao um por ref.
+    """
+    uniq = [s for s in dict.fromkeys(candidates) if s]
+    if not uniq:
+        return []
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "cat-file", "--batch-check"],
+            input="\n".join(uniq) + "\n",
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=_EVIDENCE_PROBE_TIMEOUT, check=False,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return []
+    return [
+        parts[0] for parts in (line.split() for line in proc.stdout.splitlines())
+        if len(parts) >= 2 and parts[1] == "commit"
+    ]
 
 
 def _head_is_contained(
@@ -3092,21 +3128,26 @@ def _head_is_contained(
 
     Devolve ``(sha_que_contem, None)`` ou ``(None, None)`` quando mediu e nao
     achou; ``(None, (reason, detail))`` quando NAO deu para medir.
-    Um sha anunciado que o repo local desconhece nao e erro: apenas nao serve
-    de prova para este HEAD.
+
+    Custa DOIS subprocessos, nao um por ref: filtra em lote os shas que este
+    repo conhece e faz um unico ``rev-list HEAD --not <shas>``. A versao ingenua
+    (um ``merge-base`` por ref) foi medida travando o fechamento por mais de
+    400s num remoto que anuncia milhares de branches.
     """
-    for sha in candidates:
-        if not sha:
-            continue
-        res, err = _probe_git(repo, "merge-base", "--is-ancestor", head_sha, sha)
-        if err:
-            return None, ("probe_error", err)
-        if res.returncode == 0:
-            return sha, None
-        if res.returncode != 1:
-            # rc != 0/1 normalmente significa que o objeto remoto nao existe
-            # localmente; seguimos para a proxima ref sem concluir nada.
-            continue
+    known = _known_commits(repo, candidates)
+    if not known:
+        return None, None
+
+    res, err = _probe_git(repo, "rev-list", "--count", head_sha, "--not", *known)
+    if err:
+        return None, ("probe_error", err)
+    if res.returncode != 0:
+        return None, ("ancestry_unknown",
+                      f"cannot tell whether {head_sha[:12]} is published in {repo}: "
+                      f"{(res.stderr or '').strip()[:200]}")
+    if res.stdout.strip() == "0":
+        # Nenhum commit de HEAD esta fora das refs do remoto: esta publicado.
+        return known[0], None
     return None, None
 
 
