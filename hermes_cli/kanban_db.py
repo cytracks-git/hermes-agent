@@ -879,6 +879,11 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- the task's worktree is anchored under the project's primary repo with a
     -- deterministic branch name instead of a random wt/<task-id> fallback.
     project_id           TEXT,
+    -- DISPATCH lock, NOT an identity. Format `<host>:<pid>` where pid is the
+    -- GATEWAY process — the common ancestor of every worker on this board, so
+    -- the same value serves author and reviewer alike. It answers "is this card
+    -- claimed right now?", never "who wrote this?". For authorship use
+    -- ``authorship_identity()`` (task_runs.id / profile / worker_pid).
     claim_lock           TEXT,
     claim_expires        INTEGER,
     tenant               TEXT,
@@ -1000,6 +1005,9 @@ CREATE TABLE IF NOT EXISTS task_runs (
     step_key            TEXT,
     status              TEXT NOT NULL,
     -- status: running | done | blocked | crashed | timed_out | failed | released
+    -- Copy of tasks.claim_lock at claim time: the DISPATCH lock (gateway
+    -- `<host>:<pid>`), shared by every run of every profile on this board.
+    -- Never an author identity — the run's own id/profile/worker_pid are.
     claim_lock          TEXT,
     claim_expires       INTEGER,
     worker_pid          INTEGER,
@@ -3772,6 +3780,74 @@ def schedule_task(
 
 # --- Worker context builder (what a spawned worker sees) ---
 
+def authorship_identity(conn: sqlite3.Connection, task_id: str, *, run_id: Optional[int] = None) -> dict:
+    """Answer "who wrote the work now under review, and am I that worker?".
+
+    Existe porque ``claim_lock`` NAO responde isso e foi lido como se
+    respondesse: quatro runs de revisao do card ``t_ad873a37`` foram recusados
+    porque o revisor comparou o ``claim_lock`` com o proprio avo, achou igual e
+    concluiu "sou eu quem escreveu". O avo e o gateway — ancestral de TODO
+    worker do board —, entao a igualdade vale sempre e nao distingue nada.
+
+    O eixo que distingue e o run: cada run tem id, profile e um ``spawned.pid``
+    proprio. Dois runs sao a mesma sessao de trabalho apenas quando sao o
+    MESMO run.
+
+    Devolve ``author`` (ultimo run fechado que entregou trabalho), ``self``
+    (o run que pergunta) e ``is_self_review``. Campos com ``None`` significam
+    "nao medido" — ausencia de dado nunca vira igualdade, ou o falso positivo
+    voltaria com outra roupa.
+    """
+    # Handoffs: um run que entregou trabalho para outro olhar. `crashed` e
+    # afins nao entregaram nada, e um run que so pediu revisao e o que interessa.
+    handoff_outcomes = ("review_requested", "completed", "changes_requested")
+    placeholders = ", ".join("?" for _ in handoff_outcomes)
+    author_row = conn.execute(
+        f"SELECT id, profile, worker_pid, outcome, ended_at FROM task_runs "
+        f"WHERE task_id = ? AND ended_at IS NOT NULL "
+        f"  AND outcome IN ({placeholders}) "
+        f"ORDER BY ended_at DESC, id DESC LIMIT 1",
+        (task_id, *handoff_outcomes),
+    ).fetchone()
+
+    if run_id is None:
+        raw = os.environ.get("HERMES_KANBAN_RUN_ID")
+        if os.environ.get("HERMES_KANBAN_TASK") == task_id and raw and raw.isdigit():
+            run_id = int(raw)
+
+    self_row = None
+    if run_id is not None:
+        self_row = conn.execute(
+            "SELECT id, profile, worker_pid FROM task_runs WHERE id = ? AND task_id = ?",
+            (run_id, task_id),
+        ).fetchone()
+
+    def _shape(row) -> Optional[dict]:
+        if row is None:
+            return None
+        out = {"run_id": row["id"], "profile": row["profile"], "worker_pid": row["worker_pid"]}
+        if "outcome" in row.keys():
+            out["outcome"] = row["outcome"]
+        return out
+
+    author, myself = _shape(author_row), _shape(self_row)
+    # Identidade so se afirma sobre dois runs REAIS e conhecidos. Sem isso a
+    # resposta e None ("nao medido"), nunca False disfarcado de prova.
+    is_self_review = (author["run_id"] == myself["run_id"]) if (author and myself) else None
+    return {
+        "task_id": task_id,
+        "author": author,
+        "self": myself,
+        "is_self_review": is_self_review,
+        # Eco explicito: o leitor ve o campo ao lado do aviso de que ele nao
+        # serve para esta pergunta, em vez de ir busca-lo achando que serve.
+        "claim_lock_is_not_identity": (
+            "claim_lock is the dispatch lock (gateway <host>:<pid>), shared by every "
+            "worker on this board; it can never distinguish author from reviewer."
+        ),
+    }
+
+
 def build_worker_context(conn: sqlite3.Connection, task_id: str) -> str:
     """Everything a worker should read about its task: header, body,
     attachments, prior attempts, done-parent handoffs, the assignee's recent
@@ -3785,6 +3861,7 @@ def build_worker_context(conn: sqlite3.Connection, task_id: str) -> str:
     lines: list[str] = []
     _ctx_header(lines, task)
     _ctx_attachments(lines, list_attachments(conn, task_id))
+    _ctx_authorship(lines, conn, task_id)
     _ctx_prior_attempts(lines, conn, task_id, now)
     _ctx_parent_results(lines, conn, task_id, now)
     _ctx_role_history(lines, conn, task, now)
@@ -3869,6 +3946,54 @@ def _ctx_attachments(lines: list[str], attachments: list[Attachment]) -> None:
         size_str = f", {size_kb} KB" if size_kb else ""
         ctype = f", {att.content_type}" if att.content_type else ""
         lines.append(f"- `{att.filename}`{ctype}{size_str} → `{att.stored_path}`")
+    lines.append("")
+
+
+def _ctx_authorship(lines: list[str], conn: sqlite3.Connection, task_id: str) -> None:
+    """Render the authorship axis whenever a prior run handed work off.
+
+    A reviewer must not have to derive "did I write this?" from process
+    ancestry — that derivation is exactly what burned four runs on
+    ``t_ad873a37``. Fresh cards (no handoff yet) render nothing.
+    """
+    ident = authorship_identity(conn, task_id)
+    author, myself = ident["author"], ident["self"]
+    if not author:
+        return
+    lines.append("## Authorship (who wrote the work under review)")
+    lines.append(
+        "Identity lives on the RUN, never on `claim_lock` — that field is the "
+        "dispatch lock (gateway `<host>:<pid>`), shared by every worker on this "
+        "board, so comparing it against your own process ancestry says \"it's me\" "
+        "on every run and proves nothing."
+    )
+    lines.append(
+        f"- Work handed off by: run {author['run_id']} "
+        f"(@{author['profile'] or 'unknown'}, {author.get('outcome') or 'unknown'}, "
+        f"worker pid {author['worker_pid'] if author['worker_pid'] is not None else 'not recorded'})"
+    )
+    if myself:
+        lines.append(
+            f"- You are: run {myself['run_id']} (@{myself['profile'] or 'unknown'}, "
+            f"worker pid {myself['worker_pid'] if myself['worker_pid'] is not None else 'not recorded'})"
+        )
+    else:
+        lines.append("- You are: run not identified (HERMES_KANBAN_RUN_ID absent or foreign)")
+    if ident["is_self_review"] is True:
+        lines.append(
+            "- **Same run wrote and is reviewing this** — that is a real "
+            "self-review; do not approve your own work."
+        )
+    elif ident["is_self_review"] is False:
+        lines.append(
+            "- Different runs: you are NOT the author. Review normally — "
+            "sharing a gateway, a host or a profile name is not self-review."
+        )
+    else:
+        lines.append(
+            "- NOT MEASURED: your own run could not be identified, so no "
+            "authorship claim is made either way."
+        )
     lines.append("")
 
 
