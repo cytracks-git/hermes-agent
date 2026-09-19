@@ -262,9 +262,28 @@ As saidas que considerei e por que nao as tomei:
 - exigir metadata obrigatoria: transformaria o gate no bloqueio burocratico que
   o card proibe, e 177 de 193 runs reais nao declaram nada.
 
-A saida honesta e **configurar `default_workdir` no board** — ai o worktree
-externo passa a ter ancora objetiva. E decisao de configuracao do board, nao de
-codigo, e nao e minha para tomar.
+**RETRATACAO (rodada 4).** Esta secao dizia, ate a rodada 3: *"A saida honesta
+e configurar `default_workdir` no board — ai o worktree externo passa a ter
+ancora objetiva."* **Isso esta ERRADO, e o revisor mediu** (`w1_default_workdir.py`):
+
+```
+  colunas de tasks com 'workdir': []
+  _resolve_evidence_repos menciona default_workdir? False
+  => _descobrir_worktrees_do_card so e chamada quando o PROPRIO workspace e git
+     (kanban_db.py: `if is_git: candidates.extend(...)`).
+     Num card scratch nao-git ela NUNCA roda — independentemente de
+     default_workdir, que nem e lido por este codigo.
+```
+
+Confirmado no fonte: `kanban_db.py` so aplica `default_workdir` a
+`workspace_kind in {"dir","worktree"}` — **nunca a scratch**, que e o kind de
+W1. O gate nao le `default_workdir` em lugar nenhum.
+
+Uma limitacao com saida FALSA e pior que uma limitacao declarada, porque convida
+a fechar o furo com uma acao que nao tem efeito. **W1 continua aberto** e nao
+tem saida de configuracao: fechar exige decidir uma ancora objetiva para card
+`scratch` cujo trabalho vive num repo que o board nunca viu — decisao de
+desenho, com custo, que cabe ao orquestrador e nao a este card.
 
 ### Meu proprio commit nao esta empurrado
 

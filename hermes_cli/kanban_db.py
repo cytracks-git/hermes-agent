@@ -2992,12 +2992,18 @@ def _descobrir_repos_aninhados(raiz: Path, task_id: str) -> list[Path]:
 
 
 def _descobrir_worktrees_do_card(repo: Path, task_id: str) -> list[Path]:
-    """Worktrees ligados a ``repo`` que carregam ESTE task id no caminho.
+    """Worktrees ligados a ``repo`` que carregam ESTE task id, mais o ANCORA.
 
     O ``git worktree list`` e a fonte: quem responde e o git, a partir de
     ``.git/worktrees``, nao a metadata do worker. O filtro pelo task id
     delimita o RECORTE — worktree de outro card, sujo e esquecido, nao pode
     travar este fechamento (seria a paranoia que o card proibe).
+
+    O ANCORA (o primeiro da lista, que e o main worktree) entra mesmo sem
+    carregar o task id: sem ele, o caso G2 da rodada 3 fecha o card com a
+    branch do repo principal orfa. Ele nao vira paranoia porque o que se cobra
+    dele e so o que o HEAD DELE tocou na janela deste card — o recorte por
+    reflog de ``_verify_repo_branches``, nao as suas ``refs/heads`` inteiras.
     """
     res, err = _probe_git(repo, "worktree", "list", "--porcelain")
     if err:
@@ -3005,11 +3011,12 @@ def _descobrir_worktrees_do_card(repo: Path, task_id: str) -> list[Path]:
     if res.returncode != 0:
         return []
     achados: list[Path] = []
-    for linha in res.stdout.splitlines():
-        if not linha.startswith("worktree "):
-            continue
-        caminho = Path(linha[len("worktree "):].strip())
-        if task_id in caminho.name or task_id in str(caminho):
+    caminhos = [
+        Path(linha[len("worktree "):].strip())
+        for linha in res.stdout.splitlines() if linha.startswith("worktree ")
+    ]
+    for i, caminho in enumerate(caminhos):
+        if i == 0 or task_id in caminho.name or task_id in str(caminho):
             achados.append(caminho)
     return achados
 
@@ -3275,6 +3282,201 @@ def _raise_unpushed(task_id: str, count: int, head_sha: str, repo: Path, branch:
     raise UnpushedWorkError(max(count, 1), head_sha, task_id, str(repo), branch)
 
 
+# Quanto do reflog olhar quando o board nao sabe quando o card comecou.
+# Fail-closed pelo lado CARO: sem janela, mede mais, nunca menos.
+_REFLOG_JANELA_PADRAO = 7 * 24 * 3600
+
+_RE_REFLOG_EPOCH = re.compile(r"HEAD@\{(\d+)\}")
+_RE_REFLOG_CHECKOUT = re.compile(r"checkout: moving from (\S+) to (\S+)")
+_RE_SHA_PURO = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+def _janela_do_card(conn: sqlite3.Connection, task_id: str) -> int:
+    """Epoch em que o card comecou a trabalhar. O BOARD escreve, nao o worker.
+
+    Usa o ``started_at`` do run mais antigo ainda vivo do card — e nao o do run
+    atual — porque um card reivindicado varias vezes (retry, reclaim) continua
+    respondendo pelo trabalho das tentativas anteriores.
+
+    Sem nenhum run gravado, cai para ``_REFLOG_JANELA_PADRAO``: mede DEMAIS em
+    vez de menos, que e o lado seguro de errar num gate.
+    """
+    try:
+        row = conn.execute(
+            "SELECT MIN(started_at) AS t FROM task_runs WHERE task_id = ?", (task_id,),
+        ).fetchone()
+    except sqlite3.Error:
+        row = None
+    agora = int(time.time())
+    if row is not None and row["t"]:
+        return int(row["t"])
+    return agora - _REFLOG_JANELA_PADRAO
+
+
+def _branches_tocadas_pelo_card(repo: Path, desde: int, task_id: str) -> list[str]:
+    """Branches que o HEAD DESTE worktree apontou a partir de ``desde``.
+
+    Esta funcao e a resposta a falha bloqueante da rodada 3: ``_verify_repo_publication``
+    media so o HEAD no instante do ``complete``, e um ``git checkout main`` de
+    UMA LINHA fechava o card deixando o commit orfao — a classe exata que o card
+    nasceu para matar (medido: 10 de 91 worktrees deste host tinham trabalho
+    orfao fora do HEAD, incluindo os commits desta propria entrega).
+
+    A fonte e o reflog do HEAD, e ela atende a regua do card:
+      - e POR WORKTREE (arquivo em ``.git/worktrees/<nome>/logs/HEAD``), entao
+        nao herda o historico de worktrees vizinhos;
+      - quem escreve e o git, a cada checkout/commit — inclusive o checkout que
+        o worker usaria para esconder a branch;
+      - a janela vem do board (``task_runs.started_at``), nao da metadata.
+
+    RECORTE, medido e nao suposto (``docs/evidencia/t7e6fb387/``): cobrar TODAS
+    as ``refs/heads`` alcancaria 638 branches nao publicadas em 93 repos deste
+    host, quase todas de cards alheios compartilhadas pelos 87 worktrees do
+    clm360 — o board congelaria. Com o recorte por reflog: 5 branches em 5
+    worktrees, todas trabalho de card real nao publicado.
+    """
+    res, err = _probe_git(repo, "reflog", "show", "HEAD", "--date=unix")
+    if err:
+        raise UnmeasuredEvidenceError("reflog_probe_failed", err, task_id)
+    if res.returncode != 0:
+        stderr = (res.stderr or "").strip()
+        # Repo novo / sem reflog e resposta CONCLUSIVA: nao ha historico a ler.
+        # Qualquer outro erro e "nao consegui medir", que nao pode virar verde.
+        if stderr and "no reflog" not in stderr.lower():
+            raise UnmeasuredEvidenceError(
+                "reflog_probe_failed",
+                f"`git reflog show HEAD` failed in {repo}: {stderr[:300]}",
+                task_id,
+            )
+        return []
+
+    tocadas: list[str] = []
+    for linha in res.stdout.splitlines():
+        m = _RE_REFLOG_EPOCH.search(linha)
+        if not m:
+            continue
+        if int(m.group(1)) < desde:
+            break  # reflog vem em ordem decrescente: daqui para tras e fora da janela
+        mv = _RE_REFLOG_CHECKOUT.search(linha)
+        if mv:
+            # O checkout doa as DUAS pontas: a branch que ficou para tras e a que
+            # entrou. E a de tras que o bypass de uma linha abandonava.
+            tocadas.extend([mv.group(1), mv.group(2)])
+
+    vistos: set[str] = set()
+    out: list[str] = []
+    for b in tocadas:
+        if not b or b == "HEAD" or _RE_SHA_PURO.match(b) or b in vistos:
+            continue
+        vistos.add(b)
+        out.append(b)
+    return out
+
+
+def _verify_branch_publication(
+    task_id: str, repo: Path, branch: str, remote: str,
+) -> Optional[dict]:
+    """A ponta de ``branch`` esta anunciada pelo remoto? ``None`` se nao ha o que cobrar.
+
+    Devolve ``None`` quando a branch nao existe mais (trabalho descartado com
+    ``git branch -D``: nao ha commit a cobrar, e recusar ali seria cobrar por um
+    fantasma) e quando ela nao tem commit fora do que os remotos anunciam.
+    Levanta ``UnpushedWorkError`` quando tem.
+    """
+    res, err = _probe_git(repo, "rev-parse", "--verify", f"refs/heads/{branch}")
+    if err:
+        raise UnmeasuredEvidenceError("probe_error", err, task_id)
+    if res.returncode != 0:
+        return None  # branch apagada: nada a cobrar
+    tip = res.stdout.strip()
+
+    res, err = _probe_git(
+        repo, "ls-remote", remote, f"refs/heads/{branch}",
+        timeout=_EVIDENCE_REMOTE_TIMEOUT,
+    )
+    if err:
+        raise UnmeasuredEvidenceError("probe_timeout", err, task_id)
+    if res.returncode != 0:
+        raise UnmeasuredEvidenceError(
+            "ls_remote_failed",
+            f"`git ls-remote {remote} refs/heads/{branch}` failed in {repo}: "
+            f"{(res.stderr or '').strip()[:300]}",
+            task_id,
+        )
+    announced = res.stdout.split("\t")[0].strip() if res.stdout.strip() else ""
+    if announced:
+        contained, erro = _head_is_contained(repo, tip, [announced])
+        if erro:
+            raise UnmeasuredEvidenceError(erro[0], erro[1], task_id)
+        if contained:
+            return None  # publicada
+
+    # A branch pode ter sido integrada noutra ref (merge, rebase para outro nome).
+    # A pergunta continua sendo "este commit ja foi publicado?", respondida pelo
+    # remoto — nunca por refs/remotes locais, que o worker escreve.
+    res, err = _probe_git(repo, "ls-remote", "--heads", remote, timeout=_EVIDENCE_REMOTE_TIMEOUT)
+    if err:
+        raise UnmeasuredEvidenceError("probe_timeout", err, task_id)
+    if res.returncode != 0:
+        raise UnmeasuredEvidenceError(
+            "ls_remote_failed",
+            f"`git ls-remote --heads {remote}` failed in {repo}: "
+            f"{(res.stderr or '').strip()[:300]}",
+            task_id,
+        )
+    todas = [l.split("\t")[0].strip() for l in res.stdout.splitlines() if "\t" in l]
+    contained, erro = _head_is_contained(repo, tip, todas)
+    if erro:
+        raise UnmeasuredEvidenceError(erro[0], erro[1], task_id)
+    if contained:
+        return None
+
+    count = 1
+    res_count, err = _probe_git(repo, "rev-list", "--count", branch, "--not", "--remotes")
+    if err:
+        raise UnmeasuredEvidenceError("probe_error", err, task_id)
+    if res_count.returncode == 0:
+        count = int(res_count.stdout.strip() or 1)
+    _raise_unpushed(task_id, count, tip, repo, branch)
+
+
+def _verify_repo_branches(
+    conn: sqlite3.Connection, task_id: str, repo: Path,
+) -> list[dict]:
+    """Toda branch que ESTE card tocou no ``repo`` esta publicada, ou recusa.
+
+    Complementa ``_verify_repo_publication`` (que cobre o HEAD) pelo lado que a
+    rodada 3 mediu em aberto: as branches que o card teve nas maos e deixou
+    para tras. Sem isto, ``git checkout <branch-publicada>`` desliga o gate.
+    """
+    desde = _janela_do_card(conn, task_id)
+    branches = _branches_tocadas_pelo_card(repo, desde, task_id)
+    if not branches:
+        return []
+
+    res, err = _probe_git(repo, "remote")
+    if err:
+        raise UnmeasuredEvidenceError("probe_error", err, task_id)
+    remotes = [r.strip() for r in res.stdout.splitlines() if r.strip()]
+    if not remotes:
+        # Sem remoto nao ha como provar publicacao. O caminho do HEAD ja recusa
+        # por `no_remote` quando ha commits; aqui so evitamos afirmar o que nao
+        # foi medido.
+        raise UnmeasuredEvidenceError(
+            "no_remote",
+            f"{repo} has branches touched by this task but no configured remote, "
+            f"so publication cannot be proven",
+            task_id,
+        )
+    remote = "origin" if "origin" in remotes else remotes[0]
+
+    medidas: list[dict] = []
+    for branch in branches:
+        _verify_branch_publication(task_id, repo, branch, remote)
+        medidas.append({"branch": branch, "modo": "publicado_ou_ausente"})
+    return medidas
+
+
 def _gate_completion_evidence(
     conn: sqlite3.Connection,
     task_id: str,
@@ -3342,10 +3544,16 @@ def _gate_completion_evidence(
                     )
                 raise UnknownShaError(unknown, task_id)
 
-        # 2. Todo repo medido tem de estar publicado.
+        # 2. Todo repo medido tem de estar publicado — o HEAD e as branches que
+        #    ESTE card teve nas maos. Sem a segunda metade, `git checkout <ref
+        #    publicada>` desliga o gate (falha bloqueante medida na rodada 3).
         verified: list[dict] = []
         for repo in repos:
-            verified.append(_verify_repo_publication(task_id, repo))
+            medida = _verify_repo_publication(task_id, repo)
+            branches = _verify_repo_branches(conn, task_id, repo)
+            if branches:
+                medida = {**medida, "branches_do_card": branches}
+            verified.append(medida)
 
     except UnpushedWorkError as exc:
         with write_txn(conn):
