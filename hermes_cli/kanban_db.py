@@ -24,7 +24,7 @@ import time
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, NoReturn, Optional
 
 from toolsets import get_toolset_names
 
@@ -2642,31 +2642,67 @@ _PROSE_SHA_RE = re.compile(r"\b[0-9a-f]{40}\b")
 
 
 class UnpushedWorkError(ValueError):
-    """``complete_task`` refused: workspace has unpushed commits that are
-    unreachable from any remote-tracking branch. A ``ValueError`` so tool error
-    handlers treat it as recoverable."""
+    """``complete_task`` refused: a measured repo holds commits the canonical
+    remote does not announce. A ``ValueError`` so tool error handlers treat it
+    as recoverable.
 
-    def __init__(self, unpushed_count: int, head_sha: str, completing_task_id: str):
+    A autoridade e a resposta do ``git ls-remote``, nunca ``refs/remotes/*``:
+    essas refs locais sao escriveis pelo worker (``git update-ref``) e por isso
+    nao podem autorizar o fechamento.
+    """
+
+    def __init__(self, unpushed_count: int, head_sha: str, completing_task_id: str,
+                 repo_path: str = "", branch: str = ""):
         self.unpushed_count = unpushed_count
         self.head_sha = head_sha
         self.completing_task_id = completing_task_id
+        self.repo_path = repo_path
+        self.branch = branch
+        where = f" in {repo_path}" if repo_path else ""
+        ref = f" branch {branch}" if branch else ""
         super().__init__(
-            f"completion blocked: workspace has {unpushed_count} unpushed commit(s) "
-            f"(HEAD: {head_sha}) not found on any remote. Run `git push` and retry."
+            f"completion blocked: {unpushed_count} commit(s){where}{ref} "
+            f"(HEAD: {head_sha}) are not announced by the remote. "
+            f"Run `git push` and retry."
         )
 
 
 class UnknownShaError(ValueError):
-    """``complete_task`` refused: metadata claimed commit SHA(s) that cannot
-    be resolved in the workspace. A ``ValueError`` so tool error handlers
-    treat it as recoverable."""
+    """``complete_task`` refused: metadata claimed commit SHA(s) that no
+    measured repo can resolve. A ``ValueError`` so tool error handlers treat it
+    as recoverable.
+
+    A mensagem NAO sugere remover o campo: premiar a omissao foi exatamente o
+    defeito da rodada anterior (declarar travava, calar fechava).
+    """
 
     def __init__(self, unknown_shas: list[str], completing_task_id: str):
         self.unknown_shas = list(unknown_shas)
         self.completing_task_id = completing_task_id
         super().__init__(
-            f"completion blocked: metadata claimed commit SHA(s) that cannot be resolved "
-            f"in workspace: {', '.join(unknown_shas)}"
+            f"completion blocked: metadata claimed commit SHA(s) that no measured "
+            f"repository can resolve: {', '.join(unknown_shas)}. Commit and push the "
+            f"work, or correct the SHA to one that exists."
+        )
+
+
+class UnmeasuredEvidenceError(ValueError):
+    """``complete_task`` refused: the evidence could not be MEASURED.
+
+    Nao medir e diferente de medir e achar limpo. A rodada anterior engolia
+    falha de sonda com ``except: pass`` e fechava o card — "nao consegui
+    perguntar ao remoto" virava "nao ha nada por publicar". Aqui a ausencia de
+    medicao recusa e diz o que fazer.
+    """
+
+    def __init__(self, reason: str, detail: str, completing_task_id: str):
+        self.reason = reason
+        self.detail = detail
+        self.completing_task_id = completing_task_id
+        super().__init__(
+            f"completion blocked: cannot verify publication ({reason}): {detail}. "
+            f"This is NOT proof that the work is published. Fix the cause and retry, "
+            f"or ask an operator to close it with `--force`."
         )
 
 
@@ -2815,111 +2851,376 @@ def _gate_created_cards(
     return verified_cards
 
 
+_EVIDENCE_PROBE_TIMEOUT = 15
+_EVIDENCE_REMOTE_TIMEOUT = 30
+_DECLARED_REPO_KEYS = ("worktree", "repo", "repo_path", "workspace", "worktree_path")
+
+
+def _probe_git(
+    repo: Path, *args: str, timeout: int = _EVIDENCE_PROBE_TIMEOUT,
+) -> tuple[subprocess.CompletedProcess, Optional[str]]:
+    """``git -C repo args`` que distingue as TRES respostas que importam.
+
+    Devolve ``(completed_process, None)`` quando o git rodou (qualquer rc), e
+    ``(processo_vazio, detalhe)`` quando nem deu para perguntar (timeout,
+    binario ausente). Quem chama e obrigado a tratar o segundo caso: e ele que a
+    rodada anterior engolia com ``except: pass``, transformando "nao medi" em
+    "esta limpo".
+    """
+    from hermes_cli.kanban_db_workspace import _git
+    fail = subprocess.CompletedProcess(args=["git", *args], returncode=-1, stdout="", stderr="")
+    try:
+        res = _git(repo, *args, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return fail, f"`git {' '.join(args)}` timed out after {timeout}s in {repo}"
+    except (subprocess.SubprocessError, OSError) as exc:
+        return fail, f"`git {' '.join(args)}` could not run in {repo}: {exc}"
+    if res is None:
+        return fail, f"`git {' '.join(args)}` returned no result in {repo}"
+    return res, None
+
+
+def _is_git_worktree(path: Path) -> tuple[bool, Optional[str]]:
+    """``(e_repo_git, detalhe_do_nao_medido)``.
+
+    ``(False, None)`` e uma resposta CONCLUSIVA: o diretorio existe e nao e git.
+    ``(False, detalhe)`` significa que a sonda nao rodou — nao e permitido
+    concluir nada a partir disso.
+    """
+    if not path.is_dir():
+        return False, None
+    res, err = _probe_git(path, "rev-parse", "--is-inside-work-tree")
+    if err:
+        return False, err
+    if res.returncode != 0:
+        return False, None  # conclusivo: git respondeu que nao e work tree
+    return res.stdout.strip() == "true", None
+
+
+def _collect_declared_paths(metadata: Optional[dict]) -> list[str]:
+    """Caminhos que o worker declarou em metadata. Declarar custa MAIS medicao."""
+    out: list[str] = []
+    if not isinstance(metadata, dict):
+        return out
+    for key in _DECLARED_REPO_KEYS:
+        v = metadata.get(key)
+        if isinstance(v, str) and v.strip():
+            out.append(v.strip())
+        elif isinstance(v, (list, tuple)):
+            out.extend(str(i).strip() for i in v if isinstance(i, str) and i.strip())
+    return out
+
+
+def _collect_claimed_shas(metadata: Optional[dict]) -> list[str]:
+    claimed: list[str] = []
+    if not isinstance(metadata, dict):
+        return claimed
+    for k in ("commit", "sha", "head", "git_sha"):
+        v = metadata.get(k)
+        if isinstance(v, str) and v.strip():
+            claimed.append(v.strip())
+        elif v is not None and not isinstance(v, (dict, list, tuple)):
+            claimed.append(str(v).strip())
+    commits = metadata.get("commits")
+    if isinstance(commits, (list, tuple)):
+        for c in commits:
+            if isinstance(c, str) and c.strip():
+                claimed.append(c.strip())
+            elif c is not None and not isinstance(c, (dict, list, tuple)):
+                claimed.append(str(c).strip())
+    elif isinstance(commits, str) and commits.strip():
+        claimed.append(commits.strip())
+    return claimed
+
+
+def _resolve_evidence_repos(
+    task_id: str, workspace_path: Optional[str], metadata: Optional[dict],
+) -> list[Path]:
+    """O CONJUNTO de repos a medir, deduplicado por git-common-dir.
+
+    A rodada anterior olhava so o ``workspace_path`` do card — e o board real
+    tem 73 cards ``scratch`` (nao-git) cujo trabalho vive num worktree FORA
+    dele. Medir so o workspace deixava esse trabalho invisivel.
+    """
+    candidates: list[Path] = []
+    if workspace_path:
+        candidates.append(Path(workspace_path).expanduser())
+    for declared in _collect_declared_paths(metadata):
+        p = Path(declared).expanduser()
+        if not p.exists():
+            # Declarou caminho que nao existe: nao da para conferir a afirmacao.
+            raise UnmeasuredEvidenceError(
+                "declared_path_missing",
+                f"metadata declares a path that does not exist on disk: {declared}",
+                task_id,
+            )
+        candidates.append(p)
+
+    repos: list[Path] = []
+    seen: set[str] = set()
+    for cand in candidates:
+        is_git, err = _is_git_worktree(cand)
+        if err:
+            raise UnmeasuredEvidenceError("workspace_probe_failed", err, task_id)
+        if not is_git:
+            continue  # conclusivo: nao e repo (pode ser dir de saida)
+        res, err = _probe_git(cand, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        if err:
+            raise UnmeasuredEvidenceError("workspace_probe_failed", err, task_id)
+        key = res.stdout.strip() if res.returncode == 0 else str(cand.resolve())
+        if key in seen:
+            continue
+        seen.add(key)
+        repos.append(cand)
+    return repos
+
+
+def _verify_repo_publication(task_id: str, repo: Path) -> dict:
+    """Prova que o HEAD do repo esta ANUNCIADO pelo remoto, ou recusa.
+
+    A autoridade e o ``git ls-remote``: o worker escreve ``refs/remotes/*`` com
+    um ``update-ref`` e nao escreve a resposta do remoto. Medido: a rodada
+    anterior fechava o card com uma ref forjada e nenhum push.
+    """
+    res, err = _probe_git(repo, "rev-parse", "HEAD")
+    if err:
+        raise UnmeasuredEvidenceError("probe_error", err, task_id)
+    if res.returncode != 0:
+        # Repo sem nenhum commit: nao ha trabalho a publicar.
+        return {"path": str(repo), "modo": "sem_commits"}
+    head_sha = res.stdout.strip()
+
+    res, err = _probe_git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    if err:
+        raise UnmeasuredEvidenceError("probe_error", err, task_id)
+    branch = res.stdout.strip() if res.returncode == 0 else ""
+    if not branch or branch == "HEAD":
+        raise UnmeasuredEvidenceError(
+            "detached_head",
+            f"{repo} is on a detached HEAD ({head_sha[:12]}), so no branch can be "
+            f"checked against the remote",
+            task_id,
+        )
+
+    res, err = _probe_git(repo, "remote")
+    if err:
+        raise UnmeasuredEvidenceError("probe_error", err, task_id)
+    remotes = [r.strip() for r in res.stdout.splitlines() if r.strip()]
+    if not remotes:
+        raise UnmeasuredEvidenceError(
+            "no_remote",
+            f"{repo} has commits but no configured remote, so publication cannot "
+            f"be proven",
+            task_id,
+        )
+    remote = "origin" if "origin" in remotes else remotes[0]
+
+    res, err = _probe_git(
+        repo, "ls-remote", remote, f"refs/heads/{branch}",
+        timeout=_EVIDENCE_REMOTE_TIMEOUT,
+    )
+    if err:
+        raise UnmeasuredEvidenceError("probe_timeout", err, task_id)
+    if res.returncode != 0:
+        raise UnmeasuredEvidenceError(
+            "ls_remote_failed",
+            f"`git ls-remote {remote} refs/heads/{branch}` failed in {repo}: "
+            f"{(res.stderr or '').strip()[:300]}",
+            task_id,
+        )
+
+    announced = res.stdout.split("\t")[0].strip() if res.stdout.strip() else ""
+    if announced:
+        contained, err = _head_is_contained(repo, head_sha, [announced])
+        if err:
+            raise UnmeasuredEvidenceError(err[0], err[1], task_id)
+        if contained:
+            return {
+                "path": str(repo), "branch": branch, "remote": remote,
+                "head_sha": head_sha, "remote_sha": announced, "modo": "publicado",
+            }
+
+    # A branch do card pode nao existir no remoto (worktree recem-criado) ou ter
+    # ficado para tras. A pergunta que importa nao e "esta branch existe la?",
+    # e sim "este commit ja foi publicado?" — entao perguntamos ao remoto por
+    # TODAS as refs que ele anuncia. Continua imune a `update-ref`: a lista vem
+    # do remoto, nao de refs/remotes local.
+    res, err = _probe_git(repo, "ls-remote", remote, timeout=_EVIDENCE_REMOTE_TIMEOUT)
+    if err:
+        raise UnmeasuredEvidenceError("probe_timeout", err, task_id)
+    if res.returncode != 0:
+        raise UnmeasuredEvidenceError(
+            "ls_remote_failed",
+            f"`git ls-remote {remote}` failed in {repo}: {(res.stderr or '').strip()[:300]}",
+            task_id,
+        )
+    all_announced = [
+        line.split("\t")[0].strip() for line in res.stdout.splitlines() if "\t" in line
+    ]
+    contained, err = _head_is_contained(repo, head_sha, all_announced)
+    if err:
+        raise UnmeasuredEvidenceError(err[0], err[1], task_id)
+    if contained:
+        return {
+            "path": str(repo), "branch": branch, "remote": remote,
+            "head_sha": head_sha, "remote_sha": contained, "modo": "publicado_em_outra_ref",
+        }
+
+    # Nenhuma ref anunciada pelo remoto contem o HEAD: o trabalho nao esta publicado.
+    count = 1
+    if announced:
+        res_count, err = _probe_git(repo, "rev-list", "--count", f"{announced}..HEAD")
+        if err:
+            raise UnmeasuredEvidenceError("probe_error", err, task_id)
+        if res_count.returncode == 0:
+            count = int(res_count.stdout.strip() or 1)
+    else:
+        res_count, err = _probe_git(
+            repo, "rev-list", "--count", "HEAD", "--not", *all_announced,
+        ) if all_announced else _probe_git(repo, "rev-list", "--count", "HEAD")
+        if err:
+            raise UnmeasuredEvidenceError("probe_error", err, task_id)
+        if res_count.returncode == 0:
+            count = int(res_count.stdout.strip() or 1)
+    _raise_unpushed(task_id, count, head_sha, repo, branch)
+
+
+def _head_is_contained(
+    repo: Path, head_sha: str, candidates: list[str],
+) -> tuple[Optional[str], Optional[tuple[str, str]]]:
+    """O ``head_sha`` esta contido em alguma das refs anunciadas pelo remoto?
+
+    Devolve ``(sha_que_contem, None)`` ou ``(None, None)`` quando mediu e nao
+    achou; ``(None, (reason, detail))`` quando NAO deu para medir.
+    Um sha anunciado que o repo local desconhece nao e erro: apenas nao serve
+    de prova para este HEAD.
+    """
+    for sha in candidates:
+        if not sha:
+            continue
+        res, err = _probe_git(repo, "merge-base", "--is-ancestor", head_sha, sha)
+        if err:
+            return None, ("probe_error", err)
+        if res.returncode == 0:
+            return sha, None
+        if res.returncode != 1:
+            # rc != 0/1 normalmente significa que o objeto remoto nao existe
+            # localmente; seguimos para a proxima ref sem concluir nada.
+            continue
+    return None, None
+
+
+def _raise_unpushed(task_id: str, count: int, head_sha: str, repo: Path, branch: str) -> NoReturn:
+    raise UnpushedWorkError(max(count, 1), head_sha, task_id, str(repo), branch)
+
+
 def _gate_completion_evidence(
     conn: sqlite3.Connection,
     task_id: str,
     metadata: Optional[dict],
     preview_text: Optional[str],
 ) -> None:
-    """Verify evidence before closing a task.
+    """Recusa o fechamento quando a evidencia nao sustenta a transicao.
 
-    Refuses completion when:
-      - The task workspace has unpushed commits unreachable from any remote (UnpushedWorkError).
-      - Typed metadata keys ('commit', 'sha', 'head', 'git_sha', 'commits') claim commit SHA(s)
-        that cannot be resolved in the workspace (UnknownShaError).
+    Regua do card: nenhum dado controlado exclusivamente pelo worker pode,
+    sozinho, autorizar ``done``. Por isso a autoridade e a resposta do remoto
+    (``git ls-remote``), e nao refs locais que o worker escreve.
 
-    Skipped if no git repo or no remotes (for unpushed check).
+    Recusa em tres classes, todas com evento de auditoria:
+      - ``UnpushedWorkError``: medi, e o trabalho NAO esta publicado.
+      - ``UnknownShaError``: medi, e o SHA declarado nao existe.
+      - ``UnmeasuredEvidenceError``: NAO consegui medir — que nao e o mesmo
+        que estar limpo.
+
+    Fecha pelo caminho "nada a publicar" so com predicado AFIRMATIVO: conjunto
+    de repos vazio, workspace medido conclusivamente como nao-git, e nenhum SHA
+    tipado declarado.
     """
-    from hermes_cli.kanban_db_workspace import _git
-
     row = conn.execute(
-        "SELECT workspace_path FROM tasks WHERE id = ?",
-        (task_id,),
+        "SELECT workspace_path FROM tasks WHERE id = ?", (task_id,),
     ).fetchone()
     raw_path = row["workspace_path"] if row else None
-    wp = Path(raw_path).expanduser() if raw_path else None
+    claimed_shas = _collect_claimed_shas(metadata)
 
-    # Collect claimed typed commit SHAs
-    claimed_shas: list[str] = []
-    if isinstance(metadata, dict):
-        for k in ("commit", "sha", "head", "git_sha"):
-            v = metadata.get(k)
-            if isinstance(v, str) and v.strip():
-                claimed_shas.append(v.strip())
-            elif v is not None and not isinstance(v, (dict, list, tuple)):
-                claimed_shas.append(str(v).strip())
-        commits = metadata.get("commits")
-        if isinstance(commits, (list, tuple)):
-            for c in commits:
-                if isinstance(c, str) and c.strip():
-                    claimed_shas.append(c.strip())
-                elif c is not None and not isinstance(c, (dict, list, tuple)):
-                    claimed_shas.append(str(c).strip())
-        elif isinstance(commits, str) and commits.strip():
-            claimed_shas.append(commits.strip())
+    try:
+        repos = _resolve_evidence_repos(task_id, raw_path, metadata)
 
-    # Check if workspace is inside a git work tree
-    is_git = False
-    if wp and wp.is_dir():
-        try:
-            res_git = _git(wp, "rev-parse", "--is-inside-work-tree", timeout=5)
-            is_git = bool(res_git and res_git.returncode == 0 and res_git.stdout.strip() == "true")
-        except (subprocess.SubprocessError, OSError):
-            is_git = False
-
-    # 1. Verify typed SHAs (if any claimed)
-    if claimed_shas:
-        unknown_shas: list[str] = []
-        if not is_git or not wp:
-            unknown_shas = list(claimed_shas)
-        else:
-            for s in claimed_shas:
-                if not _HEX_SHA_RE.match(s):
-                    unknown_shas.append(s)
-                else:
-                    try:
-                        res = _git(wp, "cat-file", "-e", f"{s}^{{commit}}", timeout=5)
-                        if res is None or res.returncode != 0:
-                            unknown_shas.append(s)
-                    except (subprocess.SubprocessError, OSError):
-                        unknown_shas.append(s)
-        if unknown_shas:
-            with write_txn(conn):
-                _append_event(
-                    conn, task_id, "completion_blocked_unknown_sha",
-                    {
-                        "unknown_shas": unknown_shas,
-                        "summary_preview": _first_line(preview_text, 200) or None,
-                    },
+        # 1. SHA declarado tem de resolver em ALGUM repo medido.
+        if claimed_shas:
+            if not repos:
+                raise UnmeasuredEvidenceError(
+                    "sha_unverifiable",
+                    f"metadata claims commit SHA(s) {', '.join(claimed_shas)} but no "
+                    f"git repository could be measured for this task",
+                    task_id,
                 )
-            raise UnknownShaError(unknown_shas, task_id)
+            unknown: list[str] = []
+            for sha in claimed_shas:
+                if not _HEX_SHA_RE.match(sha):
+                    unknown.append(sha)
+                    continue
+                found = False
+                for repo in repos:
+                    res, err = _probe_git(repo, "cat-file", "-e", f"{sha}^{{commit}}")
+                    if err:
+                        raise UnmeasuredEvidenceError("probe_error", err, task_id)
+                    if res.returncode == 0:
+                        found = True
+                        break
+                if not found:
+                    unknown.append(sha)
+            if unknown:
+                with write_txn(conn):
+                    _append_event(
+                        conn, task_id, "completion_blocked_unknown_sha",
+                        {
+                            "unknown_shas": unknown,
+                            "repos_medidos": [str(r) for r in repos],
+                            "summary_preview": _first_line(preview_text, 200) or None,
+                        },
+                    )
+                raise UnknownShaError(unknown, task_id)
 
-    # 2. Verify unpushed commits (only if workspace is a git repo)
-    if is_git and wp:
-        try:
-            res_remotes = _git(wp, "for-each-ref", "--format=%(refname)", "refs/remotes", timeout=5)
-            if res_remotes and res_remotes.returncode == 0 and res_remotes.stdout.strip():
-                res_count = _git(wp, "rev-list", "--count", "HEAD", "--not", "--remotes", timeout=10)
-                if res_count and res_count.returncode == 0:
-                    try:
-                        unpushed_count = int(res_count.stdout.strip() or 0)
-                    except ValueError:
-                        unpushed_count = 0
-                    if unpushed_count > 0:
-                        res_head = _git(wp, "rev-parse", "HEAD", timeout=5)
-                        head_sha = res_head.stdout.strip() if res_head and res_head.returncode == 0 else "unknown"
-                        with write_txn(conn):
-                            _append_event(
-                                conn, task_id, "completion_blocked_unpushed",
-                                {
-                                    "unpushed_commits": unpushed_count,
-                                    "head_sha": head_sha,
-                                    "summary_preview": _first_line(preview_text, 200) or None,
-                                },
-                            )
-                        raise UnpushedWorkError(unpushed_count, head_sha, task_id)
-        except (subprocess.SubprocessError, OSError):
-            pass
+        # 2. Todo repo medido tem de estar publicado.
+        verified: list[dict] = []
+        for repo in repos:
+            verified.append(_verify_repo_publication(task_id, repo))
+
+    except UnpushedWorkError as exc:
+        with write_txn(conn):
+            _append_event(
+                conn, task_id, "completion_blocked_unpushed",
+                {
+                    "unpushed_commits": exc.unpushed_count,
+                    "head_sha": exc.head_sha,
+                    "repo": exc.repo_path,
+                    "branch": exc.branch,
+                    "summary_preview": _first_line(preview_text, 200) or None,
+                },
+            )
+        raise
+    except UnmeasuredEvidenceError as exc:
+        with write_txn(conn):
+            _append_event(
+                conn, task_id, "completion_blocked_unmeasured",
+                {
+                    "reason": exc.reason,
+                    "detail": exc.detail[:500],
+                    "summary_preview": _first_line(preview_text, 200) or None,
+                },
+            )
+        raise
+
+    # 3. Sucesso: registrar O QUE foi medido. Verde sem registro do que se mediu
+    #    e o proprio falso-verde que este gate existe para matar.
+    with write_txn(conn):
+        _append_event(
+            conn, task_id, "completion_evidence_verified",
+            {
+                "repos": verified,
+                "modo": "publicado" if verified else "sem_repo_medido",
+            },
+        )
 
 
 def _stage_completion_artifacts(

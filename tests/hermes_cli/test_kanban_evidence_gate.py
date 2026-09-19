@@ -306,8 +306,18 @@ def test_c9_tool_handler_catches_unpushed_and_unknown_sha(monkeypatch, tmp_path:
         assert kb.get_task(conn, tid).status == "running"
 
 
-def test_no_remotes_skips_unpushed_gate(kanban_home: Path, tmp_path: Path) -> None:
-    """Workspace with git repo but NO remotes configured must skip unpushed check."""
+def test_no_remotes_is_unmeasured_and_refuses(kanban_home: Path, tmp_path: Path) -> None:
+    """Repo com commits e SEM remoto: recusa como NAO MEDIDO.
+
+    CONTRATO MUDADO NA RODADA 2 (era `test_no_remotes_skips_unpushed_gate`).
+    A versao anterior fechava o card: "nao ha remoto com que comparar" virava
+    licenca para fechar. Isso e o fail-open que este gate existe para matar —
+    commits num repo sem remoto sao precisamente o trabalho que morre com a
+    maquina, o caso que originou o card.
+
+    Nao medir != medir e achar limpo. Se este repo local e intencional, o
+    caminho e o `force` do operador, nao o silencio do gate.
+    """
     local_repo = tmp_path / "local_repo"
     _git("init", str(local_repo))
     _git("-C", str(local_repo), "config", "user.email", "t@example.com")
@@ -325,7 +335,14 @@ def test_no_remotes_skips_unpushed_gate(kanban_home: Path, tmp_path: Path) -> No
             )
         assert kb.claim_task(conn, tid, claimer="worker") is not None
 
-        # Should complete because there are no remotes to compare against
-        assert kb.complete_task(conn, tid, summary="completed without remotes") is True
+        with pytest.raises(kb.UnmeasuredEvidenceError) as exc:
+            kb.complete_task(conn, tid, summary="completed without remotes")
+        assert exc.value.reason == "no_remote"
         task = kb.get_task(conn, tid)
-        assert task.status == "done"
+        assert task.status != "done"
+
+        # CONTROLE POSITIVO: o operador ainda fecha com force.
+        assert kb.complete_task(
+            conn, tid, summary="operator override", force=True,
+        ) is True
+        assert kb.get_task(conn, tid).status == "done"

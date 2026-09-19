@@ -617,16 +617,29 @@ def _handle_complete(args: dict, **kw) -> str:
                 f"summary/metadata and either drop these ids from created_cards, or pass "
                 f"created_cards=[] to skip the card-claim check entirely.")
         except kb.UnpushedWorkError as unpushed_err:
+            where = f" in {unpushed_err.repo_path}" if unpushed_err.repo_path else ""
+            ref = f" on branch {unpushed_err.branch}" if unpushed_err.branch else ""
             return tool_error(
-                f"kanban_complete blocked: workspace has {unpushed_err.unpushed_count} unpushed "
-                f"commit(s) (HEAD: {unpushed_err.head_sha}). Your task is still in-flight "
-                f"(no state change). Run `git push` in the workspace and retry kanban_complete.")
+                f"kanban_complete blocked: {unpushed_err.unpushed_count} commit(s)"
+                f"{where}{ref} (HEAD: {unpushed_err.head_sha}) are not announced by the "
+                f"remote. Your task is still in-flight (no state change). Run `git push` "
+                f"and retry kanban_complete.")
         except kb.UnknownShaError as sha_err:
+            # A mensagem NAO oferece remover o campo: na rodada anterior declarar
+            # o SHA travava e omitir fechava, o que premiava mentir por omissao.
             return tool_error(
                 f"kanban_complete blocked: the following commit SHA(s) claimed in metadata "
-                f"cannot be resolved in the workspace: {', '.join(sha_err.unknown_shas)}. "
-                f"Your task is still in-flight (no state change). Provide a valid commit SHA "
-                f"or remove the commit field from metadata, then retry kanban_complete.")
+                f"cannot be resolved in any measured repository: "
+                f"{', '.join(sha_err.unknown_shas)}. Your task is still in-flight (no state "
+                f"change). Commit and push the work, or correct the SHA to one that exists, "
+                f"then retry kanban_complete.")
+        except kb.UnmeasuredEvidenceError as unmeasured_err:
+            return tool_error(
+                f"kanban_complete blocked: the evidence could not be measured "
+                f"({unmeasured_err.reason}): {unmeasured_err.detail}. This is NOT proof that "
+                f"your work is published. Your task is still in-flight (no state change). "
+                f"Fix the cause and retry kanban_complete; if it cannot be fixed from here, "
+                f"leave a kanban_comment and ask an operator to close it with `--force`.")
         task = kb.get_task(conn, tid)
         _check(ok, (task.last_failure_error if task else None) or
                f"could not complete {tid} (unknown id, stale run, or already terminal)")
