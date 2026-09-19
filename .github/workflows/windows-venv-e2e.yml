@@ -50,7 +50,7 @@ jobs:
       - name: Install dependencies
         uses: ./.github/actions/retry
         with:
-          command: uv sync --locked --python 3.11 --extra dev --extra messaging
+          command: uv sync --locked --python 3.11 --extra dev --extra messaging --extra acp --extra all
 
       - name: b10 slate probes (pytest, real windows-latest)
         shell: bash
@@ -59,7 +59,7 @@ jobs:
           set -uo pipefail
           uv run --no-sync python -m pytest \
             tests/acp_adapter/test_permissions.py tests/acp_adapter/test_session_construction_off_loop.py tests/hermes_cli/test_dashboard_auth_gate.py tests/hermes_cli/test_desktop_half_installed_get_windows.py tests/hermes_cli/test_gateway.py tests/hermes_cli/test_gateway_windows.py tests/hermes_cli/test_gui_command.py tests/hermes_cli/test_managed_uv.py tests/hermes_cli/test_update_desktop_stale_warning.py tests/hermes_cli/test_update_shim_parent_wait.py tests/hermes_cli/test_update_shim_self_lock.py tests/hermes_cli/test_update_venv_health.py tests/hermes_cli/test_update_zip_fallback_guards.py tests/hermes_cli/test_update_zip_release_preserve.py tests/tools/test_drain_fd_windows.py tests/tools/test_find_shell.py \
-            -o addopts= -v -p no:cacheprovider -rA --junitxml=b10-pytest.xml
+            -o addopts= -v -p no:cacheprovider -rA --continue-on-collection-errors --junitxml=b10-pytest.xml
 
       - name: b10 slate probes (install.ps1 uv shim validation, pwsh 7)
         shell: pwsh
