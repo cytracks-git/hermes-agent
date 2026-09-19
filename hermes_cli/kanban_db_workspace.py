@@ -152,8 +152,12 @@ def _cleanup_workspace(conn: sqlite3.Connection, task_id: str) -> None:
             # source tree; without this, completion would rmtree the user's data.
             # See #28818.
             if _is_managed_scratch_path(wp):
-                shutil.rmtree(wp, ignore_errors=True)
-                _kb._log.debug("Removed scratch workspace: %s", wp)
+                motivo = _scratch_tem_trabalho_a_preservar(conn, task_id, wp)
+                if motivo is None:
+                    shutil.rmtree(wp, ignore_errors=True)
+                    _kb._log.debug("Removed scratch workspace: %s", wp)
+                else:
+                    _preservar_scratch(conn, task_id, wp, motivo)
             else:
                 _kb._log.warning(
                     "Refusing to remove out-of-scratch workspace for task %s: %s "
@@ -169,6 +173,67 @@ def _cleanup_workspace(conn: sqlite3.Connection, task_id: str) -> None:
         _try_cleanup_parent_workspaces(conn, task_id)
     except Exception:
         pass  # best-effort — never block completion
+
+
+def _scratch_tem_trabalho_a_preservar(
+    conn: sqlite3.Connection, task_id: str, wp: Path,
+) -> Optional[str]:
+    """Motivo para NAO apagar este scratch, ou ``None`` se pode ir embora.
+
+    Metade da motivacao do card e a perda de "53 arquivos em /tmp": o caminho
+    ``worktree`` ja preservava arvore suja, mas o ``scratch`` fazia ``rmtree``
+    sem consultar nada. Medido no board atlas: 27 workspaces scratch com
+    conteudo, o maior com 737 MB.
+
+    O criterio e a DURABILIDADE, nao o tamanho: arquivo que ja virou attachment
+    do card esta salvo e nao justifica segurar o diretorio. Assim "preservar"
+    nao vira vazamento de disco — dos 69 scratch do board, 22 estao vazios e
+    continuam sendo removidos.
+
+    Na duvida (nao consigo ler o diretorio), PRESERVA: apagar e irreversivel,
+    preservar custa disco.
+    """
+    try:
+        restantes = [p for p in wp.rglob("*") if p.is_file()]
+    except OSError as exc:
+        return f"nao foi possivel inspecionar o workspace ({exc})"
+    if not restantes:
+        return None
+
+    # Nomes ja copiados para os attachments duraveis do card.
+    try:
+        duraveis = {a.filename for a in _kb.list_attachments(conn, task_id)}
+    except Exception:
+        duraveis = set()
+
+    nao_salvos = [p for p in restantes if p.name not in duraveis]
+    if not nao_salvos:
+        return None
+    amostra = ", ".join(sorted(p.name for p in nao_salvos)[:5])
+    return f"{len(nao_salvos)} arquivo(s) sem copia duravel (ex.: {amostra})"
+
+
+def _preservar_scratch(
+    conn: sqlite3.Connection, task_id: str, wp: Path, motivo: str,
+) -> None:
+    """Deixa o scratch no disco e ANUNCIA — preservar calado vira lixo invisivel.
+
+    Nunca levanta: preservacao e efeito colateral do cleanup, jamais um veto ao
+    fechamento. Um board que nao fecha card e pior que um que fecha demais.
+    """
+    _kb._log.warning(
+        "kanban: preserved scratch workspace for task %s at %s (%s). "
+        "Review it and remove it by hand once the work is safe.",
+        task_id, wp, motivo,
+    )
+    try:
+        with _kb.write_txn(conn):
+            _kb._append_event(
+                conn, task_id, "workspace_preserved_unpublished",
+                {"path": str(wp), "reason": motivo},
+            )
+    except Exception:
+        pass  # best-effort: o diretorio ja esta preservado, que e o que importa
 
 
 def _cleanup_worktree_workspace(

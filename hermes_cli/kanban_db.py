@@ -2855,6 +2855,18 @@ _EVIDENCE_PROBE_TIMEOUT = 15
 _EVIDENCE_REMOTE_TIMEOUT = 30
 _DECLARED_REPO_KEYS = ("worktree", "repo", "repo_path", "workspace", "worktree_path")
 
+# Profundidade da varredura por repos ANINHADOS no workspace. Medido no board
+# atlas: os 5 cards reais com repo dentro do workspace usam `<workspace>/repo` e
+# `<workspace>/review` — profundidade 1. O limite existe para nao transformar o
+# fechamento numa varredura de disco; subir isso custa tempo em todo `complete`.
+_EVIDENCE_NESTED_DEPTH = 2
+
+# Diretorios que nunca contem o trabalho do card e custam caro para varrer.
+_EVIDENCE_SKIP_DIRS = frozenset({
+    ".git", "node_modules", "__pycache__", ".venv", "venv", ".tox", ".mypy_cache",
+    ".pytest_cache", "dist", "build", ".next", "target", ".cache",
+})
+
 
 def _probe_git(
     repo: Path, *args: str, timeout: int = _EVIDENCE_PROBE_TIMEOUT,
@@ -2933,18 +2945,104 @@ def _collect_claimed_shas(metadata: Optional[dict]) -> list[str]:
     return claimed
 
 
+def _descobrir_repos_aninhados(raiz: Path, task_id: str) -> list[Path]:
+    """Repos git DENTRO do workspace, que o worker nao precisa declarar.
+
+    Fonte objetiva: o worker escolhe onde poe o repo, mas nao escolhe se ele
+    aparece na varredura. Medido no board atlas — 5 cards reais guardam o
+    trabalho em ``<workspace>/repo`` e a rodada 2 nao enxergava nenhum, porque
+    so olhava ``workspace_path`` (nao-git) e o que a metadata declarasse.
+
+    Varre ate ``_EVIDENCE_NESTED_DEPTH`` niveis. Nao desce em repo ja achado: o
+    conteudo de um worktree pertence a ele.
+    """
+    achados: list[Path] = []
+    try:
+        if not raiz.is_dir():
+            return achados
+    except OSError as exc:
+        raise UnmeasuredEvidenceError(
+            "workspace_probe_failed", f"cannot stat workspace {raiz}: {exc}", task_id)
+
+    fronteira = [(raiz, 0)]
+    while fronteira:
+        atual, nivel = fronteira.pop(0)
+        if nivel >= _EVIDENCE_NESTED_DEPTH:
+            continue
+        try:
+            filhos = sorted(p for p in atual.iterdir() if p.is_dir())
+        except OSError as exc:
+            # Nao conseguir LER o diretorio nao e o mesmo que ele estar limpo.
+            raise UnmeasuredEvidenceError(
+                "workspace_probe_failed",
+                f"cannot list {atual} while scanning for nested repos: {exc}",
+                task_id,
+            )
+        for filho in filhos:
+            if filho.name in _EVIDENCE_SKIP_DIRS or filho.is_symlink():
+                continue
+            is_git, err = _is_git_worktree(filho)
+            if err:
+                raise UnmeasuredEvidenceError("workspace_probe_failed", err, task_id)
+            if is_git:
+                achados.append(filho)
+                continue  # nao desce dentro do repo
+            fronteira.append((filho, nivel + 1))
+    return achados
+
+
+def _descobrir_worktrees_do_card(repo: Path, task_id: str) -> list[Path]:
+    """Worktrees ligados a ``repo`` que carregam ESTE task id no caminho.
+
+    O ``git worktree list`` e a fonte: quem responde e o git, a partir de
+    ``.git/worktrees``, nao a metadata do worker. O filtro pelo task id
+    delimita o RECORTE — worktree de outro card, sujo e esquecido, nao pode
+    travar este fechamento (seria a paranoia que o card proibe).
+    """
+    res, err = _probe_git(repo, "worktree", "list", "--porcelain")
+    if err:
+        raise UnmeasuredEvidenceError("workspace_probe_failed", err, task_id)
+    if res.returncode != 0:
+        return []
+    achados: list[Path] = []
+    for linha in res.stdout.splitlines():
+        if not linha.startswith("worktree "):
+            continue
+        caminho = Path(linha[len("worktree "):].strip())
+        if task_id in caminho.name or task_id in str(caminho):
+            achados.append(caminho)
+    return achados
+
+
 def _resolve_evidence_repos(
     task_id: str, workspace_path: Optional[str], metadata: Optional[dict],
 ) -> list[Path]:
-    """O CONJUNTO de repos a medir, deduplicado por git-common-dir.
+    """O CONJUNTO de repos a medir, deduplicado por git-dir.
 
-    A rodada anterior olhava so o ``workspace_path`` do card — e o board real
-    tem 73 cards ``scratch`` (nao-git) cujo trabalho vive num worktree FORA
-    dele. Medir so o workspace deixava esse trabalho invisivel.
+    Tres fontes, em ordem de confiabilidade — e as duas primeiras NAO dependem
+    do que o worker resolve escrever:
+
+    1. o ``workspace_path`` do card (o board escreve, nao o worker);
+    2. repos ANINHADOS no workspace e worktrees que carregam o task id
+       (descoberta por varredura/``git worktree list``);
+    3. caminhos DECLARADOS em metadata (so acrescentam alvo, nunca removem).
+
+    A rodada 2 tinha so (1) e (3), e (3) e opcional: omitir metadata era o
+    atalho para fechar sem prova. Medido: 177 de 193 runs com metadata no board
+    calam sobre o repo.
     """
     candidates: list[Path] = []
     if workspace_path:
-        candidates.append(Path(workspace_path).expanduser())
+        ws = Path(workspace_path).expanduser()
+        candidates.append(ws)
+        # (2) descoberta objetiva, independente de declaracao
+        candidates.extend(_descobrir_repos_aninhados(ws, task_id))
+        is_git, err = _is_git_worktree(ws)
+        if err:
+            raise UnmeasuredEvidenceError("workspace_probe_failed", err, task_id)
+        if is_git:
+            candidates.extend(_descobrir_worktrees_do_card(ws, task_id))
+
     for declared in _collect_declared_paths(metadata):
         p = Path(declared).expanduser()
         if not p.exists():
@@ -2964,9 +3062,13 @@ def _resolve_evidence_repos(
             raise UnmeasuredEvidenceError("workspace_probe_failed", err, task_id)
         if not is_git:
             continue  # conclusivo: nao e repo (pode ser dir de saida)
-        res, err = _probe_git(cand, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        res, err = _probe_git(cand, "rev-parse", "--path-format=absolute", "--git-dir")
         if err:
             raise UnmeasuredEvidenceError("workspace_probe_failed", err, task_id)
+        # Dedup por git-DIR, nao git-common-dir: dois worktrees do mesmo repo
+        # compartilham o common-dir mas tem HEADs diferentes, e e o HEAD que
+        # esta sendo medido. A rodada 2 usava common-dir e assim descartava
+        # silenciosamente o worktree do card quando o repo ancora ja entrara.
         key = res.stdout.strip() if res.returncode == 0 else str(cand.resolve())
         if key in seen:
             continue
@@ -3015,6 +3117,22 @@ def _verify_repo_publication(task_id: str, repo: Path) -> dict:
         )
     remote = "origin" if "origin" in remotes else remotes[0]
 
+    # A URL do remoto que vai APROVAR este fechamento, gravada no evento.
+    #
+    # O gate prova que um remoto anunciou o commit — nao que seja o remoto
+    # CERTO. Um worker pode apontar `origin` para um bare repo que ele mesmo
+    # criou e empurrar para la (medido: o caso W3 do revisor fecha o card).
+    # Proibir remoto local nao serve: os proprios testes usam bare local
+    # legitimo, e o Atlas tem repo com remoto `destino` separado.
+    #
+    # O que se corrige aqui e a INVISIBILIDADE. Gravada a URL, a troca de
+    # remoto vira uma linha auditavel no evento em vez de acontecer calada.
+    # Esta e uma limitacao DECLARADA do gate, nao um furo esquecido.
+    res_url, err = _probe_git(repo, "remote", "get-url", remote)
+    if err:
+        raise UnmeasuredEvidenceError("probe_error", err, task_id)
+    remote_url = res_url.stdout.strip() if res_url.returncode == 0 else ""
+
     res, err = _probe_git(
         repo, "ls-remote", remote, f"refs/heads/{branch}",
         timeout=_EVIDENCE_REMOTE_TIMEOUT,
@@ -3037,6 +3155,7 @@ def _verify_repo_publication(task_id: str, repo: Path) -> dict:
         if contained:
             return {
                 "path": str(repo), "branch": branch, "remote": remote,
+                "remote_url": remote_url,
                 "head_sha": head_sha, "remote_sha": announced, "modo": "publicado",
             }
 
@@ -3069,6 +3188,7 @@ def _verify_repo_publication(task_id: str, repo: Path) -> dict:
     if contained:
         return {
             "path": str(repo), "branch": branch, "remote": remote,
+            "remote_url": remote_url,
             "head_sha": head_sha, "remote_sha": contained, "modo": "publicado_em_outra_ref",
         }
 

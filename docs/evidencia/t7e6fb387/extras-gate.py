@@ -14,9 +14,17 @@ WT = Path("/Users/farantes/atlas/wt/gate-evidencia")
 sys.path.insert(0, str(WT))
 os.chdir(WT)
 
-from hermes_cli import kanban_db as kb
-from hermes_cli import kanban_db_connect as kbc
-from hermes_cli import kanban_db_workspace as kbw
+# ISOLAMENTO ANTES DE QUALQUER IMPORT DO KANBAN. Este script setava apenas
+# HERMES_HOME, e `HERMES_KANBAN_DB` (injetado em todo worker) VENCE: os cards de
+# fixture iam para o board de PRODUCAO. Medido em causa-colateral-board.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from isolar_board import afirmar_isolado, isolar_board  # noqa: E402
+
+_RAIZ_ISOLADA = isolar_board("extras-gate-")
+
+from hermes_cli import kanban_db as kb          # noqa: E402
+from hermes_cli import kanban_db_connect as kbc  # noqa: E402
+from hermes_cli import kanban_db_workspace as kbw  # noqa: E402
 
 
 def git(*args, cwd=None):
@@ -26,12 +34,15 @@ def git(*args, cwd=None):
 
 
 def make_home(tmp: Path):
-    home = tmp / ".hermes"
-    home.mkdir()
-    os.environ["HERMES_HOME"] = str(home)
+    """O isolamento ja foi feito por isolar_board(); aqui so se reconfirma.
+
+    Reconferir a cada fixture e barato e impede que uma edicao futura mova o
+    import para antes do isolamento sem ninguem perceber.
+    """
+    afirmar_isolado()
     kb._INITIALIZED_PATHS.clear()
     kb.init_db()
-    return home
+    return Path(os.environ["HERMES_HOME"])
 
 
 def make_repo(tmp: Path) -> Path:
