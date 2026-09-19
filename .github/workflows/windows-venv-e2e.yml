@@ -52,6 +52,27 @@ jobs:
         with:
           command: uv sync --locked --python 3.11 --extra dev --extra messaging
 
+      - name: b10 slate probes (pytest, real windows-latest)
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          uv run --no-sync python -m pytest \
+            tests/acp_adapter/test_permissions.py tests/acp_adapter/test_session_construction_off_loop.py tests/hermes_cli/test_dashboard_auth_gate.py tests/hermes_cli/test_desktop_half_installed_get_windows.py tests/hermes_cli/test_gateway.py tests/hermes_cli/test_gateway_windows.py tests/hermes_cli/test_gui_command.py tests/hermes_cli/test_managed_uv.py tests/hermes_cli/test_update_desktop_stale_warning.py tests/hermes_cli/test_update_shim_parent_wait.py tests/hermes_cli/test_update_shim_self_lock.py tests/hermes_cli/test_update_venv_health.py tests/hermes_cli/test_update_zip_fallback_guards.py tests/hermes_cli/test_update_zip_release_preserve.py tests/tools/test_drain_fd_windows.py tests/tools/test_find_shell.py \
+            -o addopts= -v -p no:cacheprovider -rA --junitxml=b10-pytest.xml
+
+      - name: b10 slate probes (install.ps1 uv shim validation, pwsh 7)
+        shell: pwsh
+        continue-on-error: true
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-install-ps1-uv-shim-validation.ps1
+
+      - name: Upload b10 results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b10-pytest
+          path: b10-pytest.xml
+
       - name: Run venv-holder live E2E
         shell: bash
         run: |
