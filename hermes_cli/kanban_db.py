@@ -1081,6 +1081,13 @@ CREATE INDEX IF NOT EXISTS idx_links_child           ON task_links(child_id);
 CREATE INDEX IF NOT EXISTS idx_links_parent          ON task_links(parent_id);
 CREATE INDEX IF NOT EXISTS idx_comments_task         ON task_comments(task_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_task           ON task_events(task_id, created_at);
+-- Leitura por (card, kind) em ordem de id. Sem ela, "a ultima linha deste kind
+-- neste card" resolve com USE TEMP B-TREE FOR ORDER BY, que ordena TODOS os
+-- eventos do card a cada consulta -- medido em 0,603 ms contra 0,007 ms por
+-- leitura num card de 1.4 mil eventos (o tamanho do maior card do board real).
+-- E o caminho do diagnostico de aprovacao (kanban_approval_diagnostics), que e
+-- consultado a cada poll de uma espera humana.
+CREATE INDEX IF NOT EXISTS idx_events_task_kind      ON task_events(task_id, kind, id);
 CREATE INDEX IF NOT EXISTS idx_runs_task             ON task_runs(task_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_runs_status           ON task_runs(status);
 CREATE INDEX IF NOT EXISTS idx_attachments_task      ON task_attachments(task_id, created_at);

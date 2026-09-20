@@ -111,6 +111,27 @@ PHASE_LABEL: dict[str, str] = {
 
 DEFAULT_NOTICE_MAX_ATTEMPTS = 3
 
+# Predicado de UMA request, em SQL.
+#
+# Antes disto a leitura era um recorte global (``kind = ? ORDER BY id DESC
+# LIMIT 200``) com o ``request_id`` conferido depois, em Python: bastavam 200
+# observacoes mais novas -- de qualquer espera do board -- para a linha desta
+# request cair fora da janela. A deduplicacao ficava cega para o proprio
+# passado e o mesmo poll voltava a gravar, quebrando por CARGA o invariante que
+# o H1 fixou em 1058 (relogio e fila nao criam linha). Um LIMIT e teto de
+# leitura, nunca filtro.
+#
+# O recorte por ``task_id`` vem junto porque um ``request_id`` pertence a
+# exatamente UM card -- evento de outro card nao tem como ser desta request --
+# e porque e ele que aproveita ``idx_events_task``. Sem coluna, tabela nem
+# indice novo.
+#
+# ``json_valid`` guarda o ``json_extract``: payload invalido ou NULL vira
+# objeto vazio e simplesmente nao casa, em vez de derrubar a consulta.
+_PAYLOAD = "(CASE WHEN json_valid(payload) THEN payload ELSE json_object() END)"
+_OF_REQUEST = (f" WHERE task_id = ? AND kind = ? "
+               f"   AND json_extract({_PAYLOAD}, '$.request_id') = ? ")
+
 
 def resolve_notice_max_attempts() -> int:
     """``kanban.approval_notice_max_attempts``, saneado.
@@ -156,17 +177,24 @@ def last_evidence(conn: sqlite3.Connection, task_id: str, run_id: Optional[int])
     return int(row["id"]), int(row["created_at"])
 
 
-def _last_progress(conn: sqlite3.Connection, request_id: str) -> Optional[dict]:
-    """Ultima observacao gravada para ESTA request (payload decodificado)."""
-    row = conn.execute(
-        "SELECT id, payload, created_at FROM task_events "
-        " WHERE kind = ? ORDER BY id DESC LIMIT 200", (PROGRESS_KIND,),
-    ).fetchall()
-    for item in row:
-        payload = kb._json_or(item["payload"], {}) or {}
-        if payload.get("request_id") == request_id:
-            return {"id": int(item["id"]), "created_at": int(item["created_at"]), **payload}
-    return None
+def _last_progress(conn: sqlite3.Connection, task_id: str, request_id: str, *,
+                   exclude_notice: bool = False) -> Optional[dict]:
+    """Ultima observacao gravada para ESTA request (payload decodificado).
+
+    ``exclude_notice`` ignora as linhas de entrega de aviso, que tem ciclo
+    proprio e nao descrevem a etapa da operacao.
+    """
+    sql = (f"SELECT id, payload, created_at FROM task_events {_OF_REQUEST}"
+           + (f" AND json_extract({_PAYLOAD}, '$.phase') IS NOT ? " if exclude_notice else "")
+           + " ORDER BY id DESC LIMIT 1")
+    args: tuple = (task_id, PROGRESS_KIND, request_id)
+    if exclude_notice:
+        args += (NOTICE,)
+    row = conn.execute(sql, args).fetchone()
+    if row is None:
+        return None
+    payload = kb._json_or(row["payload"], {}) or {}
+    return {"id": int(row["id"]), "created_at": int(row["created_at"]), **payload}
 
 
 def record_progress(
@@ -188,7 +216,7 @@ def record_progress(
     worker (fora de txn) quanto caminhos ja transacionados.
     """
     evidence_id, _ = last_evidence(conn, task_id, run_id)
-    previous = _last_progress(conn, request_id)
+    previous = _last_progress(conn, task_id, request_id)
     if previous is not None and (
             previous.get("phase") == phase
             and previous.get("reason_code") == reason_code
@@ -207,43 +235,37 @@ def record_progress(
     return True
 
 
-def _notice_retry_marker(conn: sqlite3.Connection, request_id: str) -> int:
+def _notice_retry_marker(conn: sqlite3.Connection, task_id: str, request_id: str) -> int:
     """Id do ultimo ``approval_notice_retry`` desta request (0 se nunca houve).
 
     O orcamento de tentativas conta a partir dele: um "Retry notice" humano nao
-    apaga historia, so move a marca d'agua.
+    apaga historia, so move a marca d'agua. Predicado por request pelo mesmo
+    motivo de :func:`_last_progress`: com a janela global, um board movimentado
+    escondia o retry recem-pedido e o aviso nunca mais saia.
     """
-    rows = conn.execute(
-        "SELECT id, payload FROM task_events WHERE kind = ? ORDER BY id DESC LIMIT 200",
-        (NOTICE_RETRY_KIND,),
-    ).fetchall()
-    for item in rows:
-        payload = kb._json_or(item["payload"], {}) or {}
-        if payload.get("request_id") == request_id:
-            return int(item["id"])
-    return 0
+    row = conn.execute(
+        f"SELECT id FROM task_events {_OF_REQUEST} ORDER BY id DESC LIMIT 1",
+        (task_id, NOTICE_RETRY_KIND, request_id),
+    ).fetchone()
+    return int(row["id"]) if row is not None else 0
 
 
-def notice_attempts(conn: sqlite3.Connection, request_id: str, generation: str) -> int:
+def notice_attempts(conn: sqlite3.Connection, task_id: str, request_id: str,
+                    generation: str) -> int:
     """Falhas de entrega ja gravadas para ``(request, geracao)`` apos o ultimo retry.
 
     Conta EVENTO DURAVEL, nao estado de processo: o dashboard (outro processo)
     precisa ver o mesmo numero que o poller do TUI, e um restart do gateway nao
     pode zerar um orcamento silenciosamente.
     """
-    floor = _notice_retry_marker(conn, request_id)
-    rows = conn.execute(
-        "SELECT id, payload FROM task_events WHERE kind = ? AND id > ? ORDER BY id ASC",
-        (PROGRESS_KIND, floor),
-    ).fetchall()
-    total = 0
-    for item in rows:
-        payload = kb._json_or(item["payload"], {}) or {}
-        if (payload.get("request_id") == request_id
-                and payload.get("generation") == generation
-                and payload.get("reason_code") == NOTICE_DELIVERY_FAILED):
-            total += 1
-    return total
+    floor = _notice_retry_marker(conn, task_id, request_id)
+    row = conn.execute(
+        f"SELECT COUNT(*) AS total FROM task_events {_OF_REQUEST} AND id > ? "
+        f"   AND json_extract({_PAYLOAD}, '$.generation') = ? "
+        f"   AND json_extract({_PAYLOAD}, '$.reason_code') = ? ",
+        (task_id, PROGRESS_KIND, request_id, floor, generation, NOTICE_DELIVERY_FAILED),
+    ).fetchone()
+    return int(row["total"])
 
 
 def request_notice_retry(
@@ -255,22 +277,21 @@ def request_notice_retry(
                          run_id=run_id)
 
 
-def _delivery_view(conn: sqlite3.Connection, request_id: str) -> dict:
+def _delivery_view(conn: sqlite3.Connection, task_id: str, request_id: str) -> dict:
     """Ultimo estado de entrega do aviso desta request.
 
     ``Transport acknowledged`` -- nunca ``Human read``. Um recibo de transporte
     prova que o frame saiu, nao que alguem leu.
     """
-    floor = _notice_retry_marker(conn, request_id)
+    floor = _notice_retry_marker(conn, task_id, request_id)
     rows = conn.execute(
-        "SELECT id, payload FROM task_events WHERE kind = ? AND id > ? ORDER BY id ASC",
-        (PROGRESS_KIND, floor),
+        f"SELECT id, payload FROM task_events {_OF_REQUEST} AND id > ? "
+        f"   AND json_extract({_PAYLOAD}, '$.phase') = ? ORDER BY id ASC",
+        (task_id, PROGRESS_KIND, request_id, floor, NOTICE),
     ).fetchall()
     status, attempts, generation = "unknown", 0, None
     for item in rows:
         payload = kb._json_or(item["payload"], {}) or {}
-        if payload.get("request_id") != request_id or payload.get("phase") != NOTICE:
-            continue
         reason = payload.get("reason_code")
         generation = payload.get("generation")
         if reason == NOTICE_DELIVERY_FAILED:
@@ -319,20 +340,13 @@ def project(conn: sqlite3.Connection, request: journal.ApprovalRequest) -> dict:
     ``resource_cost`` sai ``None`` de proposito: CPU/I/O da espera nao e medido
     em producao, e a UI mostra ``Unavailable``. Zero seria mentira confortavel.
     """
-    progress = _last_progress(conn, request.request_id)
-    # Observacao de etapa (ignora as linhas de entrega de aviso, que tem
-    # ciclo proprio e nao descrevem a etapa da operacao).
+    progress = _last_progress(conn, request.task_id, request.request_id)
+    # Observacao de etapa: as linhas de entrega de aviso tem ciclo proprio e
+    # nao descrevem a etapa da operacao, entao a busca as pula no proprio SQL.
     phase_progress = progress if (progress or {}).get("phase") != NOTICE else None
     if phase_progress is None:
-        rows = conn.execute(
-            "SELECT id, payload, created_at FROM task_events WHERE kind = ? "
-            " ORDER BY id DESC LIMIT 200", (PROGRESS_KIND,)).fetchall()
-        for item in rows:
-            payload = kb._json_or(item["payload"], {}) or {}
-            if payload.get("request_id") == request.request_id and payload.get("phase") != NOTICE:
-                phase_progress = {"id": int(item["id"]),
-                                  "created_at": int(item["created_at"]), **payload}
-                break
+        phase_progress = _last_progress(conn, request.task_id, request.request_id,
+                                        exclude_notice=True)
     phase, reason = _state_view(request, phase_progress)
     _, evidence_at = last_evidence(conn, request.task_id, request.run_id)
     transition_at = (phase_progress or {}).get("created_at")
@@ -347,7 +361,7 @@ def project(conn: sqlite3.Connection, request: journal.ApprovalRequest) -> dict:
         "last_evidence_at": evidence_at,
         # Nao medido em producao: a UI mostra "Unavailable", nunca 0.
         "resource_cost": None,
-        **_delivery_view(conn, request.request_id),
+        **_delivery_view(conn, request.task_id, request.request_id),
     }
 
 
@@ -366,10 +380,10 @@ def record_notice_outcome(
     if delivered:
         record_progress(conn, task_id=task_id, run_id=run_id, request_id=request_id,
                         phase=NOTICE, reason_code=NOTICE_DELIVERED,
-                        attempt=notice_attempts(conn, request_id, generation) + 1,
+                        attempt=notice_attempts(conn, task_id, request_id, generation) + 1,
                         generation=generation)
         return "delivered"
-    attempts = notice_attempts(conn, request_id, generation) + 1
+    attempts = notice_attempts(conn, task_id, request_id, generation) + 1
     record_progress(conn, task_id=task_id, run_id=run_id, request_id=request_id,
                     phase=NOTICE, reason_code=NOTICE_DELIVERY_FAILED,
                     attempt=attempts, generation=generation)
@@ -382,11 +396,12 @@ def record_notice_outcome(
 
 
 def notice_budget_open(
-    conn: sqlite3.Connection, request_id: str, generation: str, limit: Optional[int] = None,
+    conn: sqlite3.Connection, task_id: str, request_id: str, generation: str,
+    limit: Optional[int] = None,
 ) -> bool:
     """Ainda ha tentativa de aviso disponivel para ``(request, geracao)``?"""
     cap = resolve_notice_max_attempts() if limit is None else limit
-    return notice_attempts(conn, request_id, generation) < cap
+    return notice_attempts(conn, task_id, request_id, generation) < cap
 
 
 def transport_generation(transport: Any) -> str:

@@ -424,7 +424,8 @@ def _kb_deliver_approval_notice(conn, sub_ident, ev, text, approval_delivery,
     from hermes_cli import kanban_approval_diagnostics as diag
     from hermes_cli import kanban_db_notify as _kbn
     try:
-        open_budget = diag.notice_budget_open(conn, _kb_notice_request_id(ev), generation)
+        open_budget = diag.notice_budget_open(
+            conn, sub_ident["task_id"], _kb_notice_request_id(ev), generation)
     except Exception:
         open_budget = True
     if not open_budget:

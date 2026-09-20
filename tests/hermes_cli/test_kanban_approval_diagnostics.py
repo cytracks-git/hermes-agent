@@ -32,6 +32,25 @@ def _events(conn, kind=diag.PROGRESS_KIND):
                         (kind,)).fetchall()
 
 
+def _events_for(conn, request_id, kind=diag.PROGRESS_KIND):
+    """Linhas de UMA request. Lido em Python de propósito: a asserção não pode
+    reusar o mesmo predicado SQL que está sob teste."""
+    return [row for row in _events(conn, kind)
+            if (kb._json_or(row["payload"], {}) or {}).get("request_id") == request_id]
+
+
+def _granted_request(task_id, run_id, request_id):
+    """``ApprovalRequest`` em ``granted``, montada sem banco.
+
+    ``project`` só lê campos do registro; construir a dataclass mantém o teste
+    focado na leitura da observação, sem arrastar o ciclo de vida inteiro."""
+    return journal.ApprovalRequest(
+        request_id=request_id, task_id=task_id, run_id=int(run_id), claim_lock="lock",
+        profile_home="/tmp/home", session_key="sess", workspace_path="/tmp/ws",
+        created_by_pid=1, created_by_started_at="0", payload_json="{}",
+        request_hash="0" * 64, state=journal.GRANTED, created_at=1)
+
+
 def _task(conn, **kw):
     tid = kb.create_task(conn, title="diag fixture", assignee="fixture", **kw)
     kb.recompute_ready(conn)
@@ -60,6 +79,76 @@ def test_repeated_polls_on_an_unchanged_wait_write_one_observation(board):
                                 request_id="ap_x", phase=diag.AWAITING_HUMAN,
                                 reason_code=diag.HUMAN_DECISION_PENDING) is True
     assert len(_events(board)) == 2
+
+
+def test_an_unchanged_wait_stays_silent_however_busy_the_board_gets(board):
+    """O silêncio desta espera não pode depender do movimento das OUTRAS.
+
+    A leitura anterior era ``kind = ? ORDER BY id DESC LIMIT 200`` com o
+    ``request_id`` filtrado em Python: bastavam 200 observações mais novas para
+    a linha anterior DESTA request cair fora da janela. A deduplicação deixava
+    de ver o passado e o mesmo poll voltava a gravar — exatamente o invariante
+    que o H1 fixou em 1058 (relógio/fila não criam linha), quebrado por carga.
+
+    210 irmãs no MESMO card é o caso mais difícil de propósito: recortar por
+    card não salva ninguém aqui, só o predicado por ``request_id`` salva.
+    """
+    tid, task = _task(board)
+    step = dict(task_id=tid, run_id=task.current_run_id, phase=diag.AWAITING_HUMAN,
+                reason_code=diag.HUMAN_DECISION_PENDING)
+
+    assert diag.record_progress(board, request_id="ap_alvo", **step) is True
+    for n in range(210):
+        diag.record_progress(board, request_id=f"ap_irma_{n}", **step)
+
+    # Mesma espera, mesmo estímulo, nada material mudou para ESTA request.
+    assert diag.record_progress(board, request_id="ap_alvo", **step) is False
+    assert len(_events_for(board, "ap_alvo")) == 1
+    # Controle negativo: o ruído não engoliu a escrita das irmãs.
+    assert len(_events_for(board, "ap_irma_209")) == 1
+
+
+def test_the_projection_reads_this_requests_phase_not_the_boards_last_window(board):
+    """A projeção responde sobre o pedido pedido, não sobre o board.
+
+    Sob carga, a janela global devolvia ``resume_reason_not_yet_observed`` para
+    uma espera cuja causa JÁ tinha sido observada — trocar a causa medida por
+    \"ainda não observei\" é a mentira confortável ao contrário, e manda o
+    operador procurar no lugar errado.
+    """
+    tid, task = _task(board)
+    diag.record_progress(board, task_id=tid, run_id=task.current_run_id,
+                         request_id="ap_alvo", phase=diag.AWAITING_ADMISSION,
+                         reason_code=diag.HOST_CAPACITY)
+    for n in range(210):
+        diag.record_progress(board, task_id=tid, run_id=task.current_run_id,
+                             request_id=f"ap_irma_{n}", phase=diag.AWAITING_ADMISSION,
+                             reason_code=diag.BOARD_CAPACITY)
+
+    view = diag.project(board, _granted_request(tid, task.current_run_id, "ap_alvo"))
+    assert view["phase"] == diag.AWAITING_ADMISSION
+    assert view["reason"] == diag.HOST_CAPACITY
+    assert "max_in_progress" in view["next_action"]
+
+
+def test_a_human_retry_marker_is_not_lost_behind_other_requests(board):
+    """A marca d'água do \"Retry notice\" é desta request, não das 200 últimas.
+
+    Com a janela global, um board movimentado apagava na prática o retry que o
+    humano acabou de pedir: o orçamento continuava fechado e o aviso nunca mais
+    saía, sem nada no card explicando por quê.
+    """
+    tid, task = _task(board)
+    kw = dict(task_id=tid, run_id=task.current_run_id, request_id="ap_alvo", limit=1)
+    assert diag.record_notice_outcome(board, generation="gen-1", delivered=False, **kw) == "exhausted"
+
+    diag.request_notice_retry(board, task_id=tid, run_id=task.current_run_id, request_id="ap_alvo")
+    for n in range(210):
+        diag.request_notice_retry(board, task_id=tid, run_id=task.current_run_id,
+                                  request_id=f"ap_irma_{n}")
+
+    assert diag.notice_budget_open(board, tid, "ap_alvo", "gen-1", limit=1)
+    assert diag.notice_attempts(board, tid, "ap_alvo", "gen-1") == 0
 
 
 def test_each_material_change_produces_exactly_one_new_observation(board):
@@ -108,9 +197,14 @@ def test_every_reason_code_carries_an_action_the_operator_can_take():
     """Nenhum motivo pode chegar à UI sem resposta para 'e agora?'.
 
     Contrato entre duas peças de dados (motivos × ações), não retrato de texto.
+    A descoberta é por reflexão de propósito: um motivo novo entra aqui sozinho.
+    Nomes privados (``_PAYLOAD``, ``_OF_REQUEST``) ficam de fora — ``isupper()``
+    é verdadeiro para eles porque ``_`` não tem caixa, e constante interna de
+    SQL não faz parte do vocabulário que o operador lê.
     """
     reasons = {value for name, value in vars(diag).items()
-               if name.isupper() and isinstance(value, str) and name not in {
+               if name.isupper() and not name.startswith("_")
+               and isinstance(value, str) and name not in {
                    "PROGRESS_KIND", "NOTICE_RETRY_KIND", "AWAITING_HUMAN",
                    "AWAITING_ADMISSION", "APPLYING", "APPLIED",
                    "WRITE_RECEIPT_PENDING", "CLOSED", "NOTICE"}}
@@ -192,14 +286,14 @@ def test_notice_budget_is_durable_per_transport_generation(board):
     tid, task = _task(board)
     kw = dict(task_id=tid, run_id=task.current_run_id, request_id="ap_n", limit=2)
 
-    assert diag.notice_budget_open(board, "ap_n", "gen-1", limit=2)
+    assert diag.notice_budget_open(board, tid, "ap_n", "gen-1", limit=2)
     assert diag.record_notice_outcome(board, generation="gen-1", delivered=False, **kw) == "failed"
-    assert diag.notice_budget_open(board, "ap_n", "gen-1", limit=2)
+    assert diag.notice_budget_open(board, tid, "ap_n", "gen-1", limit=2)
     assert diag.record_notice_outcome(board, generation="gen-1", delivered=False, **kw) == "exhausted"
-    assert not diag.notice_budget_open(board, "ap_n", "gen-1", limit=2)
+    assert not diag.notice_budget_open(board, tid, "ap_n", "gen-1", limit=2)
 
     # Reconexão real = geração nova: orçamento limpo, sem tocar no histórico.
-    assert diag.notice_budget_open(board, "ap_n", "gen-2", limit=2)
+    assert diag.notice_budget_open(board, tid, "ap_n", "gen-2", limit=2)
     assert diag.record_notice_outcome(board, generation="gen-2", delivered=True, **kw) == "delivered"
 
     # Esgotar NÃO mexeu no pedido: nenhum evento de decisão foi criado.
@@ -212,14 +306,14 @@ def test_a_human_retry_reopens_the_notice_budget_without_deciding(board):
     tid, task = _task(board)
     kw = dict(task_id=tid, run_id=task.current_run_id, request_id="ap_r", limit=1)
     assert diag.record_notice_outcome(board, generation="gen-1", delivered=False, **kw) == "exhausted"
-    assert not diag.notice_budget_open(board, "ap_r", "gen-1", limit=1)
+    assert not diag.notice_budget_open(board, tid, "ap_r", "gen-1", limit=1)
 
     diag.request_notice_retry(board, task_id=tid, run_id=task.current_run_id, request_id="ap_r")
-    assert diag.notice_budget_open(board, "ap_r", "gen-1", limit=1)
+    assert diag.notice_budget_open(board, tid, "ap_r", "gen-1", limit=1)
     # Controle negativo: o retry de OUTRA request não reabre esta.
     assert diag.record_notice_outcome(board, generation="gen-1", delivered=False, **kw) == "exhausted"
     diag.request_notice_retry(board, task_id=tid, run_id=task.current_run_id, request_id="ap_other")
-    assert not diag.notice_budget_open(board, "ap_r", "gen-1", limit=1)
+    assert not diag.notice_budget_open(board, tid, "ap_r", "gen-1", limit=1)
 
 
 def test_transport_generation_is_stable_per_object_and_new_per_reconnect():

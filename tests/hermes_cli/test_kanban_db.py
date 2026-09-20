@@ -1506,6 +1506,68 @@ def test_connect_heals_reduced_tasks_schema_seeded_by_external_harness(kanban_ho
         conn.close()
 
 
+def test_a_rebuilt_legacy_board_ends_up_with_the_same_schema_as_a_fresh_one(kanban_home):
+    """O banco reconstruido tem de ficar IGUAL ao novo -- indices inclusive.
+
+    Tres comentarios em ``kanban_db_connect.py`` ja citavam este teste pelo
+    nome (``test_rebuilt_schema_matches_fresh``) como o guardiao de
+    ``_REBUILD_SPECS`` contra deriva do ``SCHEMA_SQL``. Ele nao existia em
+    lugar nenhum da suite: a promessa estava no comentario, a cobertura nao.
+    Isso importa porque ``DROP TABLE`` leva os indices junto, entao um indice
+    novo no ``SCHEMA_SQL`` que nao seja repetido no ``_REBUILD_SPECS`` some
+    calado em qualquer board legado reconstruido -- e o efeito e perda de
+    desempenho silenciosa, que ninguem ve ate o board crescer.
+
+    Contrato entre duas pecas de dados (schema novo x schema reconstruido),
+    nao retrato: um indice novo entra aqui sozinho, sem editar o teste.
+    """
+    db_path = kanban_home / "legado.db"
+    seed = sqlite3.connect(db_path)
+    # Forma legada: ``id`` TEXT, o gatilho de ``_table_has_drifted``.
+    seed.execute(
+        "CREATE TABLE task_events (id TEXT PRIMARY KEY, task_id TEXT NOT NULL,"
+        " run_id INTEGER, kind TEXT NOT NULL, payload TEXT,"
+        " created_at INTEGER NOT NULL)"
+    )
+    seed.commit()
+    seed.close()
+
+    conn = kbc.connect(db_path)
+    try:
+        assert not kbc._table_has_drifted(conn, "task_events"), "a reconstrucao nao rodou"
+        reconstruido = {
+            r["name"]: r["sql"] for r in conn.execute(
+                "SELECT name, sql FROM sqlite_master"
+                " WHERE type = 'index' AND tbl_name = 'task_events'"
+                "   AND sql IS NOT NULL")
+        }
+    finally:
+        conn.close()
+
+    fresh = sqlite3.connect(":memory:")
+    fresh.row_factory = sqlite3.Row
+    fresh.executescript(kb.SCHEMA_SQL)
+    novo = {
+        r["name"]: r["sql"] for r in fresh.execute(
+            "SELECT name, sql FROM sqlite_master"
+            " WHERE type = 'index' AND tbl_name = 'task_events'"
+            "   AND sql IS NOT NULL")
+    }
+    fresh.close()
+
+    faltando = set(novo) - set(reconstruido)
+    assert not faltando, (
+        f"indices perdidos na reconstrucao: {sorted(faltando)} -- todo CREATE INDEX"
+        " do SCHEMA_SQL precisa estar tambem em _REBUILD_SPECS['task_events']")
+
+    def _normalizar(sql: str) -> str:
+        return " ".join(sql.replace("IF NOT EXISTS ", "").split()).lower()
+
+    assert ({n: _normalizar(s) for n, s in reconstruido.items() if n in novo}
+            == {n: _normalizar(s) for n, s in novo.items()}), \
+        "indice reconstruido com colunas diferentes das do schema novo"
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher spawn invocation — _resolve_hermes_argv()
 #

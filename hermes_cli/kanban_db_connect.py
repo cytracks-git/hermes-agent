@@ -1014,14 +1014,15 @@ def _backfill_legacy_inflight_runs(conn: sqlite3.Connection) -> None:
 # for ``kanban_notify_subs``); the additive migrations can't change a column
 # type, so drift requires a rebuild. Each entry pairs the canonical CREATE
 # TABLE with the indexes DROP TABLE takes down with it.
-# ``test_rebuilt_schema_matches_fresh`` guards this against SCHEMA_SQL drift.
+# ``test_a_rebuilt_legacy_board_ends_up_with_the_same_schema_as_a_fresh_one``
+# guards this against SCHEMA_SQL drift.
 # The current schema uses ``INTEGER PRIMARY KEY AUTOINCREMENT`` / ``INTEGER NOT NULL DEFAULT 0``. ``CREATE
 # TABLE IF NOT EXISTS`` skips existing tables regardless of schema and ``_add_column_if_missing`` only adds
 # columns, so neither can fix a drifted column type — the table must be rebuilt. See #35096. Each entry
 # pairs the canonical CREATE TABLE with the CREATE INDEX statements that DROP TABLE would otherwise take
 # down with it (including ``idx_events_run``, added by the additive pass above). To guard against this list
-# drifting from SCHEMA_SQL, ``test_rebuilt_schema_matches_fresh`` asserts a rebuilt legacy DB is
-# byte-identical to a fresh one.
+# drifting from SCHEMA_SQL, ``test_a_rebuilt_legacy_board_ends_up_with_the_same_schema_as_a_fresh_one``
+# asserts a rebuilt legacy DB carries the same task_events indexes as a fresh one.
 _REBUILD_SPECS = {
     "task_events": (
         "CREATE TABLE task_events ("
@@ -1030,6 +1031,7 @@ _REBUILD_SPECS = {
         " payload TEXT, created_at INTEGER NOT NULL)",
         (
             "CREATE INDEX idx_events_task ON task_events(task_id, created_at)",
+            "CREATE INDEX idx_events_task_kind ON task_events(task_id, kind, id)",
             "CREATE INDEX idx_events_run ON task_events(run_id, id)",
         ),
     ),
