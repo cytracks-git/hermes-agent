@@ -1,0 +1,35 @@
+=== BASE (sem sabotagem): rc=0 falhas=0
+
+--- M1 deduplicacao ignora a etapa: qualquer poll grava linha nova
+    rc=1 falhas=1 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_diagnostics.py::test_each_material_change_produces_exactly_one_new_observation
+
+--- M2 deduplicacao some de vez (observacao nasce do relogio)
+    rc=1 falhas=2 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_diagnostics.py::test_each_material_change_produces_exactly_one_new_observation
+      tests/hermes_cli/test_kanban_approval_diagnostics.py::test_repeated_polls_on_an_unchanged_wait_write_one_observation
+
+--- M3 granted sem observacao passa a alegar capacidade cheia
+    rc=1 falhas=1 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_diagnostics.py::test_granted_without_an_observation_reports_not_yet_observed
+
+--- M4 orcamento de aviso vira ilimitado (martela conexao morta)
+    rc=1 falhas=2 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_diagnostics.py::test_a_human_retry_reopens_the_notice_budget_without_deciding
+      tests/hermes_cli/test_kanban_approval_diagnostics.py::test_notice_budget_is_durable_per_transport_generation
+
+--- M5 orcamento deixa de ser por geracao (reconexao herda esgotamento)
+    rc=1 falhas=1 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_diagnostics.py::test_notice_budget_is_durable_per_transport_generation
+
+--- M6 retry humano para de reabrir o orcamento
+    rc=1 falhas=1 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_diagnostics.py::test_a_human_retry_reopens_the_notice_budget_without_deciding
+
+--- M7 diagnostico entra na lista de notificacao (acordaria modelo)
+    rc=1 falhas=1 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_diagnostics.py::test_progress_events_never_reach_a_notification_or_wake_path
+
+=== RESTAURADO: rc=0 falhas=0
+
+TODAS as 7 sabotagens foram acusadas, com rc real do runner canonico.

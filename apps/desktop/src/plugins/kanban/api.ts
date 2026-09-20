@@ -183,6 +183,11 @@ export const decideApproval = (taskId: string, approval: KanbanApproval, decisio
     method: 'POST', body: { decision, request_hash: approval.request_hash }
   })
 
+/** Reabre o orçamento de AVISO. Não decide nem reenvia a escrita — só permite
+ *  ao transporte tentar de novo depois de esgotar as tentativas. */
+export const retryApprovalNotice = (taskId: string, approval: KanbanApproval) =>
+  call(withBoard(`/tasks/${taskId}/approvals/${approval.request_id}/notice-retry`), { method: 'POST' })
+
 /** Worker stdout/stderr tail (last 16 KiB — plenty for the drawer). */
 export const fetchLog = (id: string) => call<WorkerLog>(withBoard(`/tasks/${id}/log`, { tail: '16384' }))
 

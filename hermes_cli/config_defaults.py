@@ -1828,6 +1828,13 @@ DEFAULT_CONFIG = {
         # fan-out workflows that would otherwise saturate one profile's local model / API quota / browser
         # pool while leaving other profiles idle. See #21582.
         "max_in_progress_per_profile": None,
+        # Tentativas de ENTREGA do aviso de aprovação por geração de transporte
+        # (card t_78aaa333). Conexão morta para de ser martelada depois deste
+        # número; esgotar NÃO decide, não cancela e não redespacha a escrita — a
+        # request fica exatamente como está até uma reconexão real (geração
+        # nova) ou um "Retry notice" humano. Não é prazo: passagem do relógio
+        # nunca consome tentativa, só uma falha de entrega observada consome.
+        "approval_notice_max_attempts": 3,
         # Per-home claim allowlist for boards shared across Hermes homes (#110995): profile names
         # this home's dispatcher may claim (list or comma-separated string). None = any existing
         # profile is claimable. Set = fail-closed (an empty list claims nothing). Every home has a

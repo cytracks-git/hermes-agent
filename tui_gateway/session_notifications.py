@@ -352,7 +352,8 @@ def _kb_board_key(_kb, board_meta) -> tuple[str, str]:
         return slug, f"slug:{slug}"
 
 
-def _kb_poll_board(_kb, slug: str, session_key: str, approval_delivery=None) -> list:
+def _kb_poll_board(_kb, slug: str, session_key: str, approval_delivery=None,
+                   approval_generation: str = "none") -> list:
     """Claim + format this session's unseen events on one board. One poller per live session: the board is not opened
     writable unless it has a subscription owned by this exact session (a failed read-only probe — locked/corrupt DB —
     falls through so delivery is preserved)."""
@@ -387,16 +388,10 @@ def _kb_poll_board(_kb, slug: str, session_key: str, approval_delivery=None) -> 
                 if ev.kind == "approval_requested":
                     if ev.id <= (sub.get("last_ping_event_id") or 0):
                         continue
-                    try:
-                        delivered = bool(text and approval_delivery and approval_delivery(text))
-                    except Exception as exc:
-                        _notif_log_failure("kanban approval delivery failed", exc)
-                        delivered = False
-                    if not delivered:
-                        # Falha de transporte não vira recibo nem acorda modelo.
-                        _kbn.rewind_notify_cursor(conn, claimed_cursor=_new, old_cursor=ev.id - 1, **sub_ident)
+                    if not _kb_deliver_approval_notice(
+                            conn, sub_ident, ev, text, approval_delivery,
+                            approval_generation, claimed_cursor=_new):
                         break
-                    _kbn.record_notify_ping(conn, event_id=ev.id, **sub_ident)
                     continue
                 if text:
                     texts.append(DiagnosticText(text) if diagnostic_event(ev) else text)
@@ -406,6 +401,60 @@ def _kb_poll_board(_kb, slug: str, session_key: str, approval_delivery=None) -> 
                 with contextlib.suppress(Exception):
                     _kbn.remove_notify_sub(conn, **sub_ident)
     return texts
+
+
+def _kb_deliver_approval_notice(conn, sub_ident, ev, text, approval_delivery,
+                                generation: str, *, claimed_cursor) -> bool:
+    """Entrega UM aviso de aprovação e registra o desfecho. ``True`` = seguir.
+
+    Duas coisas mudam em relação ao laço anterior, que tentava para sempre:
+
+    1. O orçamento por geração de transporte (``notice_budget_open``) evita que
+       uma conexão morta reenfileire o mesmo frame indefinidamente. Esgotar NÃO
+       decide, não cancela e não redespacha a escrita — o pedido continua
+       exatamente como está, só para de bater na mesma porta. Uma reconexão real
+       traz geração nova e orçamento novo por construção.
+    2. Cada tentativa vira observação durável, então o painel mostra "Delivery
+       failed (2/3)" em vez de silêncio. O rótulo é sempre de TRANSPORTE: recibo
+       não prova leitura humana.
+
+    O cursor continua rebobinado em toda falha, inclusive na que esgota o
+    orçamento: nada de recibo sem entrega.
+    """
+    from hermes_cli import kanban_approval_diagnostics as diag
+    from hermes_cli import kanban_db_notify as _kbn
+    try:
+        open_budget = diag.notice_budget_open(conn, _kb_notice_request_id(ev), generation)
+    except Exception:
+        open_budget = True
+    if not open_budget:
+        _kbn.rewind_notify_cursor(conn, claimed_cursor=claimed_cursor, old_cursor=ev.id - 1, **sub_ident)
+        return False
+    try:
+        delivered = bool(text and approval_delivery and approval_delivery(text))
+    except Exception as exc:
+        _notif_log_failure("kanban approval delivery failed", exc)
+        delivered = False
+    with contextlib.suppress(Exception):
+        diag.record_notice_outcome(
+            conn, task_id=sub_ident["task_id"], run_id=getattr(ev, "run_id", None),
+            request_id=_kb_notice_request_id(ev), generation=generation, delivered=delivered)
+    if not delivered:
+        # Falha de transporte não vira recibo nem acorda modelo.
+        _kbn.rewind_notify_cursor(conn, claimed_cursor=claimed_cursor, old_cursor=ev.id - 1, **sub_ident)
+        return False
+    _kbn.record_notify_ping(conn, event_id=ev.id, **sub_ident)
+    return True
+
+
+def _kb_notice_request_id(ev) -> str:
+    """``request_id`` do evento; ``evento:<id>`` quando o payload não o traz.
+
+    Sem identidade de pedido o orçamento seria global e uma request barulhenta
+    calaria as outras; o fallback mantém a contagem por evento.
+    """
+    payload = getattr(ev, "payload", None) or {}
+    return str(payload.get("request_id") or f"event:{ev.id}")
 
 
 def _collect_kanban_notifications(session: dict, approval_delivery=None) -> list:
@@ -433,7 +482,16 @@ def _collect_kanban_notifications(session: dict, approval_delivery=None) -> list
     unique = {}
     for slug, resolved in (_kb_board_key(_kb, board_meta) for board_meta in boards):
         unique.setdefault(resolved, slug)
-    return [t for slug in unique.values() for t in _kb_poll_board(_kb, slug, session_key, approval_delivery)]
+    # A geração vem do OBJETO de transporte desta sessão: reconectar troca o
+    # objeto e ganha orçamento novo sem depender de relógio nem de contador de
+    # processo (que um restart zeraria em silêncio).
+    try:
+        from hermes_cli import kanban_approval_diagnostics as _diag
+        generation = _diag.transport_generation(session.get("transport"))
+    except Exception:
+        generation = "none"
+    return [t for slug in unique.values()
+            for t in _kb_poll_board(_kb, slug, session_key, approval_delivery, generation)]
 
 
 def _notif_poll_kanban(sid: str, session: dict) -> None:

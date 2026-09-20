@@ -1,8 +1,8 @@
 import { Button, useMutation, useQuery, useQueryClient, useValue } from '@hermes/plugin-sdk'
 
 
-import { $boardSlug, decideApproval, fetchApprovals, taskKey } from './api'
-import type { KanbanApproval } from './types'
+import { $boardSlug, decideApproval, fetchApprovals, retryApprovalNotice, taskKey } from './api'
+import type { ApprovalDiagnostics, KanbanApproval } from './types'
 
 interface Target {
   path_input: string
@@ -24,18 +24,53 @@ interface ApprovalPanelProps {
   waiting: boolean
 }
 
+/** Bloco de diagnóstico. Só aparece quando o backend manda a projeção: um
+ *  backend anterior omite o campo, e nesse caso não há nada honesto a dizer —
+ *  a UI cala em vez de inventar "OK". */
+function ApprovalDiagnosticsBlock(
+  { diagnostics, onRetryNotice, retrying }:
+  { diagnostics: ApprovalDiagnostics; onRetryNotice: () => void; retrying: boolean }
+) {
+  const stamp = (value: null | number) => value ? new Date(value * 1000).toLocaleString() : 'Not observed'
+  const attempts = diagnostics.delivery_attempts
+  return (
+    <dl aria-label="Wait diagnostics" className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+      <dt>Stage</dt><dd>{diagnostics.phase_label}</dd>
+      <dt>Next action</dt><dd>{diagnostics.next_action || 'None'}</dd>
+      <dt>Last transition</dt><dd>{stamp(diagnostics.last_transition_at)}</dd>
+      <dt>Last evidence</dt><dd>{stamp(diagnostics.last_evidence_at)}</dd>
+      {/* Nunca "Human read": o recibo é do transporte. */}
+      <dt>Notice</dt>
+      <dd className="flex flex-wrap items-center gap-2">
+        <span>{diagnostics.delivery_label}{attempts ? ` (${attempts} attempt${attempts === 1 ? '' : 's'})` : ''}</span>
+        {diagnostics.delivery_status === 'exhausted' && (
+          <Button disabled={retrying} onClick={onRetryNotice} size="xs" variant="outline">Retry notice</Button>
+        )}
+      </dd>
+      {/* NÃO MEDIDO em produção. Zero seria a mentira confortável. */}
+      <dt>Resource cost</dt>
+      <dd>{diagnostics.resource_cost === null ? 'Unavailable (not measured)' : String(diagnostics.resource_cost)}</dd>
+    </dl>
+  )
+}
+
 function ApprovalItem({ approval, taskId }: { approval: KanbanApproval; taskId: string }) {
 
   const client = useQueryClient()
   const slug = useValue($boardSlug)
+  const invalidate = () => {
+
+    void client.invalidateQueries({ queryKey: ['kanban', 'approvals', slug, taskId] })
+    void client.invalidateQueries({ queryKey: taskKey(slug, taskId) })
+    void client.invalidateQueries({ queryKey: ['kanban', 'board'] })
+  }
   const mutation = useMutation({
     mutationFn: (decision: 'granted' | 'denied' | 'cancelled') => decideApproval(taskId, approval, decision),
-    onSettled: () => {
-
-      void client.invalidateQueries({ queryKey: ['kanban', 'approvals', slug, taskId] })
-      void client.invalidateQueries({ queryKey: taskKey(slug, taskId) })
-      void client.invalidateQueries({ queryKey: ['kanban', 'board'] })
-    }
+    onSettled: invalidate
+  })
+  const noticeRetry = useMutation({
+    mutationFn: () => retryApprovalNotice(taskId, approval),
+    onSettled: invalidate
   })
   let payload: Payload
   try {
@@ -67,6 +102,14 @@ function ApprovalItem({ approval, taskId }: { approval: KanbanApproval; taskId: 
       {approval.decided_by && <p className="text-xs">Decision by {approval.decided_by} · {approval.decided_at ? new Date(approval.decided_at * 1000).toLocaleString() : ''}</p>}
       {approval.state === 'granted' && <p>Approved. Waiting for the original worker and available capacity.</p>}
       {approval.state === 'consumed' && <p>{approval.applied_at ? 'Written and verified.' : 'Consumed. Write receipt pending; do not retry.'}</p>}
+      {approval.diagnostics && (
+        <ApprovalDiagnosticsBlock
+          diagnostics={approval.diagnostics}
+          onRetryNotice={() => noticeRetry.mutate()}
+          retrying={noticeRetry.isPending}
+        />
+      )}
+      {noticeRetry.error && <p role="alert">Notice retry failed: {String(noticeRetry.error)}</p>}
       {mutation.error && <p role="alert">Decision failed: {String(mutation.error)}</p>}
       {pending && (
         <div className="flex flex-wrap gap-2">

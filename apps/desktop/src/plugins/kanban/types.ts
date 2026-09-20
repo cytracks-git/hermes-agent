@@ -30,6 +30,26 @@ export interface KanbanColumn {
   tasks: KanbanTask[]
 }
 
+/** Projeção de diagnóstico (kanban_approval_diagnostics.project). Derivada, ao
+ *  lado do registro imutável: não faz parte do que o humano aprova. Opcional
+ *  porque um backend anterior a t_78aaa333 não envia o campo — a UI então
+ *  esconde a seção em vez de inventar "OK". */
+export interface ApprovalDiagnostics {
+  phase: string
+  phase_label: string
+  reason: string
+  next_action: string
+  last_transition_at: number
+  last_evidence_at: number | null
+  /** Sempre null hoje: custo de CPU/E-S da espera NÃO é medido em produção.
+   *  A UI mostra "Unavailable"; zero seria mentira. */
+  resource_cost: number | null
+  delivery_status: string
+  delivery_label: string
+  delivery_attempts: number
+  delivery_generation: string | null
+}
+
 export interface KanbanApproval {
   request_id: string
   request_hash: string
@@ -40,6 +60,7 @@ export interface KanbanApproval {
   decided_at: number | null
   applied_at: number | null
   payload_json: string
+  diagnostics?: ApprovalDiagnostics | null
 }
 
 export interface KanbanBoard {

@@ -32,7 +32,12 @@ SAIDA="${3:?diretorio de saida}"
 ROTULO="${4:?rotulo (baseline|candidato|novos)}"
 
 [ -d "$ARVORE" ] || { echo "arvore inexistente: $ARVORE" >&2; exit 2; }
-[ -s "$ALVOS" ]  || { echo "lista de alvos vazia ou inexistente: $ALVOS" >&2; exit 2; }
+# `-f` e nao `-s`: um bind mount de caminho inexistente cria um DIRETORIO, e
+# diretorio tem tamanho > 0, entao `-s` o aceitava. O while abaixo lia zero
+# alvos, a lista saia vazia e o runner rodava a SUITE INTEIRA -- 44 mil testes
+# passando por prova de um recorte. Medido no card t_78aaa333.
+[ -f "$ALVOS" ] || { echo "lista de alvos nao e arquivo regular: $ALVOS" >&2; exit 2; }
+[ -s "$ALVOS" ] || { echo "lista de alvos vazia: $ALVOS" >&2; exit 2; }
 
 mkdir -p "$SAIDA"
 LOG="$SAIDA/$ROTULO.log"
