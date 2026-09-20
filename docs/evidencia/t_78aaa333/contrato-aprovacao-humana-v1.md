@@ -1,9 +1,9 @@
 # Contrato executável — aprovação humana persistente para operações de worker Kanban
 
 > **SUPERSEDIDO.** Esta é a v1, devolvida pelo revisor em R1 (comentário 1034 de t_069cfdac)
-> com 4 bloqueadores de miolo. A versão em vigor é
-> `contrato-aprovacao-humana-v2.md`, que fecha os quatro e registra em §0.1 o que mudou.
-> Este arquivo é preservado como histórico auditável da revisão — não implementar a partir dele.
+> com 4 bloqueadores de miolo. A v2 os fechou e foi por sua vez devolvida em R2; a versão
+> **em vigor é `contrato-aprovacao-humana-v3.md`** (§0.0 rastreia R2 → seção, §0.1 rastreia
+> R1 → seção). Este arquivo é preservado como histórico auditável — não implementar a partir dele.
 
 Versão: v1 (congelada nesta entrega). Autor: arquiteto (t_069cfdac).
 Revisor exigido: CISO/QA independente, nunca o autor.

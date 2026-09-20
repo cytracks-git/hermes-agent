@@ -70,9 +70,10 @@ def test_c24_patch_generico_do_dashboard_nao_tem_verbo_de_aprovacao(conn):
     Contrato §1.2 A-3: a aprovação nunca entra como status genérico editável por
     ``PATCH /tasks/{id}`` ou ``POST /tasks/bulk``.
 
-    Em v1 isto ficou PULADO por falta de ``fastapi`` no lab. Em v2 o lab injeta
-    fastapi/starlette/multipart por ``PYTHONPATH`` e o import é real — o
-    ``importorskip`` fica só como rede de segurança para quem rodar fora do lab.
+    Em v1 isto ficou PULADO por falta de ``fastapi`` no lab. Em v2 o lab passou a montar
+    fastapi/starlette/multipart no ``site-packages`` do container (``PYTHONPATH`` NÃO
+    serve: ``run_tests.sh`` roda sob ``env -i`` e derruba a variável), e o import é real;
+    o ``importorskip`` fica só como rede de segurança para quem rodar fora do lab.
     """
     plugin_api = pytest.importorskip(
         "plugins.kanban.dashboard.plugin_api",
@@ -345,23 +346,30 @@ def test_c09_journal_approval_requests_existe(conn):
 # v2 — critérios novos, exigidos pela devolução R1
 # ==========================================================================
 
-def test_c08_varreduras_de_reciclagem_so_alcancam_running(conn):
-    """C-08 (precondição): stale / órfã / expiração de claim só varrem ``running``.
+def test_c08_as_cinco_varreduras_de_reciclagem_so_alcancam_running(conn):
+    """C-08: as CINCO varreduras de reciclagem só varrem ``running``.
 
-    Contrato v2 §3.2 E-7 e §4.3 R-5.1 dependem disto: um card em ``waiting_approval``
-    (sem ``worker_pid``, sem claim) não pode ser reciclado nem promovido a ``ready``
-    por nenhuma dessas três varreduras, senão a demora humana vira respawn com LLM.
+    Contrato v3 §3.2 E-7, §0.2 e §4.3 R-5.1 dependem disto: um card em
+    ``waiting_approval`` (sem ``worker_pid``, sem claim) não pode ser reciclado nem
+    promovido a ``ready`` por nenhuma delas, senão a demora humana vira respawn com LLM.
+
+    A v2 dizia TRÊS varreduras e citava uma linha errada. São cinco, medidas aqui:
+    ``detect_stale_running``, ``reconcile_orphaned_running``, ``detect_crashed_workers``
+    (via ``_reclaim_dead_workers``), ``enforce_max_runtime`` e ``release_stale_claims``.
+    Duas delas (``reconcile_orphaned_running``, ``enforce_max_runtime``) nunca tinham
+    sido executadas por fixture nenhuma.
 
     Medido pelo COMPORTAMENTO: grava o estado direto na linha (a API ainda não o tem),
-    roda as três varreduras e confere que a linha não se moveu. Controle POSITIVO na
-    mesma medição: uma task realmente ``running`` e vencida É reciclada.
+    roda as cinco e confere que a linha não se moveu. Controle POSITIVO na mesma
+    medição: uma task realmente ``running`` e vencida É reciclada.
     """
     from hermes_cli import kanban_db_dispatch as disp
 
     parado = _task(conn)
     conn.execute(
         "UPDATE tasks SET status='waiting_approval', worker_pid=NULL, claim_lock=NULL, "
-        "claim_expires=NULL, last_heartbeat_at=NULL WHERE id=?", (parado,))
+        "claim_expires=NULL, last_heartbeat_at=NULL, max_runtime_seconds=1 WHERE id=?",
+        (parado,))
 
     # Controle positivo: esta SIM deve ser reciclada (running, claim vencido, sem heartbeat).
     vivo = _task(conn)
@@ -373,7 +381,11 @@ def test_c08_varreduras_de_reciclagem_so_alcancam_running(conn):
     conn.execute("UPDATE task_runs SET started_at = 1 WHERE task_id = ?", (vivo,))
     conn.commit()
 
+    # As CINCO. Nenhuma pode tocar em `parado`.
     disp.detect_stale_running(conn, stale_timeout_seconds=1)
+    disp.reconcile_orphaned_running(conn)
+    disp.detect_crashed_workers(conn)
+    disp.enforce_max_runtime(conn)
     kanban_db.release_stale_claims(conn)
 
     assert conn.execute(
@@ -382,6 +394,103 @@ def test_c08_varreduras_de_reciclagem_so_alcancam_running(conn):
     assert conn.execute(
         "SELECT status FROM tasks WHERE id=?", (vivo,)).fetchone()[0] != "running", (
         "nenhuma varredura reciclou o controle positivo — a fixture não mediu nada")
+
+
+def test_c36_a_volta_a_running_precisa_restaurar_a_identidade_no_mesmo_cas(conn):
+    """C-36 (bloqueador R2 #1): ``running`` sem claim é reciclado para ``ready``.
+
+    Contrato v3 §3.2 E-9. A pausa (E-3) zera ``claim_lock``/``worker_pid``/heartbeat.
+    Se a retomada devolvesse o card a ``running`` mexendo SÓ no status,
+    ``reconcile_orphaned_running`` (``kanban_db_dispatch.py:851-855``) o promoveria a
+    ``ready`` — e o dispatcher faria ``Popen`` de um SEGUNDO worker LLM ao lado do
+    primeiro, que continua vivo. Seria a regeneração que R-3 proíbe.
+
+    A fixture mede os DOIS lados na mesma execução, que é o que a torna uma medição e
+    não uma afirmação:
+
+    * controle POSITIVO — ``running`` + claim NULL (a forma ERRADA de retomar) É
+      reciclado para ``ready``. Prova que o perigo é real, não hipotético.
+    * a forma EXIGIDA por E-9 — status e identidade no mesmo UPDATE — NÃO é reciclada.
+    """
+    from hermes_cli import kanban_db_dispatch as disp
+
+    # --- controle positivo: a forma ERRADA (só o status) ---
+    errado = _task(conn)
+    conn.execute(
+        "UPDATE tasks SET status='running', claim_lock=NULL, claim_expires=NULL, "
+        "worker_pid=NULL, worker_started_at=NULL, last_heartbeat_at=NULL WHERE id=?",
+        (errado,))
+    conn.commit()
+
+    disp.reconcile_orphaned_running(conn)
+    assert conn.execute(
+        "SELECT status FROM tasks WHERE id=?", (errado,)).fetchone()[0] == "ready", (
+        "controle positivo falhou: reconcile_orphaned_running não reciclou "
+        "running+claim NULL — a premissa de E-9 mudou, reavaliar o contrato")
+
+    # --- a forma EXIGIDA por E-9: status + identidade no MESMO UPDATE ---
+    certo = _task(conn)
+    kanban_db.recompute_ready(conn)
+    assert kanban_db.claim_task(conn, certo) is not None
+    lock, pid, fingerprint = kanban_db._claimer_id(), os.getpid(), "|17899999999"
+    agora = int(__import__("time").time())
+    # Simula a pausa (E-3) e a retomada (E-9) numa sentença só.
+    conn.execute(
+        "UPDATE tasks SET status='waiting_approval', claim_lock=NULL, claim_expires=NULL, "
+        "worker_pid=NULL, worker_started_at=NULL, last_heartbeat_at=NULL WHERE id=?", (certo,))
+    cur = conn.execute(
+        "UPDATE tasks SET status='running', claim_lock=?, claim_expires=?, worker_pid=?, "
+        "worker_started_at=?, last_heartbeat_at=? "
+        "WHERE id=? AND status='waiting_approval'",
+        (lock, agora + 3600, pid, fingerprint, agora, certo))
+    conn.commit()
+    assert cur.rowcount == 1, "o CAS de E-9 não alcançou a linha — medição inválida"
+
+    disp.reconcile_orphaned_running(conn)
+    assert conn.execute(
+        "SELECT status FROM tasks WHERE id=?", (certo,)).fetchone()[0] == "running", (
+        "E-9: com claim/PID restaurados no mesmo CAS, a varredura de órfãs não pode "
+        "reciclar a task retomada")
+
+
+def test_c37_predicado_unico_de_orfa_alcanca_consumed_nao_aplicada(tmp_path):
+    """C-37 (bloqueador R2 #2): um predicado, um destino.
+
+    Contrato v3 §4.4 R-7. A v2 só alcançava ``pending``/``granted``; uma request
+    ``consumed`` cujo worker morreu antes de escrever não era vista por ninguém e o
+    card ficava preso em ``waiting_approval`` para sempre (sem worker, sem varredura,
+    sem saída humana: E-8 recusa verbo genérico e U-7 não re-decide ``consumed``).
+
+    v3 usa ``applied_at IS NULL AND state IN ('pending','granted','consumed')``. A
+    fixture roda o predicado contra o DDL de §3.4 e confere que ele:
+      * ALCANÇA as três não-aplicadas (a ``consumed`` inclusive — era o buraco);
+      * NÃO alcança a aplicada (``applied_at`` preenchido), senão reabriria o caso feliz;
+      * NÃO alcança os terminais humanos (``denied``/``cancelled``/``obsolete``).
+    """
+    db = sqlite3.connect(tmp_path / "orfas.db")
+    db.execute(
+        "CREATE TABLE approval_requests (request_id TEXT PRIMARY KEY, state TEXT NOT NULL, "
+        "applied_at INTEGER)")
+    db.executemany(
+        "INSERT INTO approval_requests VALUES (?,?,?)",
+        [("r_pend", "pending", None),
+         ("r_grant", "granted", None),
+         ("r_cons", "consumed", None),        # o buraco de R2 #2
+         ("r_aplicada", "consumed", 1789920000),
+         ("r_deny", "denied", None),
+         ("r_cancel", "cancelled", None),
+         ("r_obsolete", "obsolete", None)])
+    db.commit()
+
+    orfas = {r[0] for r in db.execute(
+        "SELECT request_id FROM approval_requests "
+        " WHERE applied_at IS NULL AND state IN ('pending','granted','consumed')")}
+
+    assert orfas == {"r_pend", "r_grant", "r_cons"}, (
+        f"predicado de R-7 não é único/exato: {sorted(orfas)}")
+    assert "r_cons" in orfas, "R2 #2: consumed-sem-escrita ficaria preso de novo"
+    assert "r_aplicada" not in orfas, "a operação aplicada não pode voltar à varredura"
+    db.close()
 
 
 def test_c31_regiao_critica_serializa_entre_processos(tmp_path):
@@ -506,14 +615,28 @@ def test_c33_uma_pendencia_por_run_e_constraint_do_banco(tmp_path):
 
 
 @pytest.mark.xfail(
-    reason="contrato v2 §5 U-4: 'approval_requested' ainda não é kind notificável", strict=True)
+    reason="contrato v3 §5 U-4: 'approval_requested' ainda não é kind notificável", strict=True)
 def test_c35_approval_requested_e_notificavel_nas_duas_listas():
     """C-35: o aviso da origem depende das DUAS listas espelhadas.
 
-    ``gateway/kanban_watchers_notifier.py:36`` (``TERMINAL_KINDS``) e o espelho de
-    ``tui_gateway/session_notifications.py:134``. Se só uma ganhar o kind, o aviso sai
-    numa superfície e some na outra — e U-5 diz que aviso não entregue não autoriza nada.
+    ``gateway/kanban_watchers_notifier.py:36`` (``TERMINAL_KINDS``) e o espelho
+    ``tui_gateway/session_notifications.py:136`` (``_KANBAN_NOTIFY_KINDS``). Se só uma
+    ganhar o kind, o aviso sai numa superfície e some na outra — e U-5 diz que aviso
+    não entregue não autoriza nada.
+
+    Em v2 esta fixture afirmava SÓ a lista do gateway, então implementar metade de U-4
+    a deixaria verde — o defeito que o revisor apontou em R2. v3 afirma as duas.
+
+    Registrado (contrato §5 U-4.1): as listas JÁ divergem hoje em três kinds
+    (``block_loop_detected``/``review_requested``/``changes_requested``, só no gateway).
+    Essa dívida preexistente NÃO é escopo deste contrato e não é asseverada aqui; a
+    fixture mede apenas o kind desta feature nas duas pontas.
     """
     from gateway import kanban_watchers_notifier as gw
+    from tui_gateway import session_notifications as tui
 
-    assert "approval_requested" in set(gw.TERMINAL_KINDS)
+    faltando = [nome for nome, lista in (
+        ("gateway.TERMINAL_KINDS", set(gw.TERMINAL_KINDS)),
+        ("tui._KANBAN_NOTIFY_KINDS", set(tui._KANBAN_NOTIFY_KINDS)),
+    ) if "approval_requested" not in lista]
+    assert not faltando, f"'approval_requested' ausente em: {faltando}"

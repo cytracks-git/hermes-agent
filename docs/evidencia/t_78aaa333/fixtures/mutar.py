@@ -50,11 +50,39 @@ elif N == "3":
           "    \"triage\": lambda conn, tid, p: _drag_to(conn, tid, \"triage\"),\n"
           "    \"approve\": lambda conn, tid, p: _set_status_direct(conn, tid, \"ready\")}")
 
-elif N == "4":
-    # M4 — 'approval_requested' entra SÓ na lista do gateway, sem o espelho do TUI
-    # (contrato U-4). O xfail estrito de C-35 tem de virar XPASS => falha do run.
+elif N == "4a":
+    # M4a — 'approval_requested' entra SO na lista do gateway, sem o espelho do TUI.
+    # Em v2 este mutante MORRIA (a fixture afirmava so o gateway, virava XPASS estrito).
+    # Em v3 ele SOBREVIVE de proposito: C-35 exige AS DUAS listas, entao meia
+    # implementacao continua sendo RED. Sobrevivencia aqui e o resultado CORRETO e e a
+    # prova de que a fixture v3 nao aceita o que a v2 aceitava (periferia apontada em R2).
     troca("gateway/kanban_watchers_notifier.py",
           "\"changes_requested\")", "\"changes_requested\", \"approval_requested\")")
+
+elif N == "4b":
+    # M4b — o kind entra nas DUAS listas (U-4 implementado). O xfail estrito de C-35
+    # tem de virar XPASS => falha do run. E o mutante que mede o RED de verdade.
+    troca("gateway/kanban_watchers_notifier.py",
+          "\"changes_requested\")", "\"changes_requested\", \"approval_requested\")")
+    troca("tui_gateway/session_notifications.py",
+          "\"archived\", \"unblocked\")", "\"archived\", \"unblocked\", \"approval_requested\")")
+
+elif N == "5":
+    # M5 — reconcile_orphaned_running deixa de reciclar running+claim NULL
+    # (contrato v3 E-9 / C-36). Mata o CONTROLE POSITIVO de C-36: se a varredura não
+    # reciclar mais esse estado, a fixture está medindo um perigo que não existe e
+    # precisa acusar em vez de passar verde.
+    troca("hermes_cli/kanban_db_dispatch.py",
+          "\"  AND (claim_lock IS NULL OR claim_expires IS NULL)\"",
+          "\"  AND (claim_lock IS NULL OR claim_expires IS NULL) AND 0\"")
+
+elif N == "6":
+    # M6 — a fixture do predicado de órfã volta ao predicado da v2 (só pending/granted),
+    # que é o bloqueador R2 #2: a request 'consumed' sem escrita some da varredura e o
+    # card fica preso. C-37 tem de FALHAR.
+    troca("tests/tools/test_contrato_aprovacao.py",
+          "state IN ('pending','granted','consumed')\")}",
+          "state IN ('pending','granted')\")}")
 
 else:
     sys.exit(f"mutante desconhecido: {N}")
