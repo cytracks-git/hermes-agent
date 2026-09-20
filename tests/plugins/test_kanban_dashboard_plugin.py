@@ -28,8 +28,13 @@ from hermes_cli import kanban_db_connect as kbc
 # ---------------------------------------------------------------------------
 
 
-def _load_plugin_router():
-    """Dynamically load plugins/kanban/dashboard/plugin_api.py and return its router."""
+def _load_plugin_module():
+    """Dynamically load plugins/kanban/dashboard/plugin_api.py and return the module.
+
+    Some tests need the module's internals (``_set_status_direct``, ``_STATUS_HANDLERS``)
+    and not just the router, so the import lives here and ``_load_plugin_router``
+    reads the router off it.
+    """
     repo_root = Path(__file__).resolve().parents[2]
     plugin_file = repo_root / "plugins" / "kanban" / "dashboard" / "plugin_api.py"
     assert plugin_file.exists(), f"plugin file missing: {plugin_file}"
@@ -41,7 +46,12 @@ def _load_plugin_router():
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
-    return mod.router
+    return mod
+
+
+def _load_plugin_router():
+    """The plugin's FastAPI router, mounted by the ``client`` fixture."""
+    return _load_plugin_module().router
 
 
 @pytest.fixture
@@ -714,6 +724,164 @@ def test_bulk_done_refused_by_open_parent_names_it(client):
     assert entry["ok"] is False
     assert f"{parent_id} (ready)" in entry["error"], entry
     assert "unsatisfied parent" in entry["error"], entry
+
+
+def _parked_on_approval(client, title: str = "aprovacao") -> str:
+    """Card em ``waiting_approval``, pelo caminho legítimo (pause_for_approval).
+
+    Escrever o status na marra mascararia o que E-8 guarda: interessa a saída a
+    partir de uma espera humana REAL, com um pedido pendente no journal.
+    """
+    from hermes_cli import kanban_db_approvals as appr
+
+    tid = client.post(
+        "/api/plugins/kanban/tasks", json={"title": title, "assignee": "executor"},
+    ).json()["task"]["id"]
+    conn = kbc.connect(kb.kanban_db_path())
+    try:
+        kb.recompute_ready(conn)
+        assert kb.claim_task(conn, tid) is not None
+        task = kb.get_task(conn, tid)
+        assert task is not None and task.current_run_id is not None
+        run_id = int(task.current_run_id)
+        with kb.write_txn(conn):
+            req = appr.create_request(
+                conn, task_id=tid, run_id=run_id, claim_lock=task.claim_lock or "lock",
+                profile_home="/tmp/home", session_key="sess", workspace_path="/tmp/ws",
+                created_by_pid=os.getpid(), created_by_started_at="epoch|1",
+                payload={"op": "write_file", "targets": [
+                    {"path_real": "/tmp/AGENTS.md", "post_sha256": "f" * 64}]})
+        assert kb.pause_for_approval(
+            conn, tid, request_id=req.request_id, request_hash=req.request_hash,
+            expected_run_id=run_id)
+    finally:
+        conn.close()
+    return tid
+
+
+def _status_on_board(client, tid: str) -> str | None:
+    board = client.get("/api/plugins/kanban/board").json()
+    for col in board["columns"]:
+        for t in col["tasks"]:
+            if t["id"] == tid:
+                return col["name"]
+    return None
+
+
+def test_waiting_approval_is_a_board_column(client):
+    """E-2: a espera humana tem coluna própria.
+
+    Sem a coluna, ``_bucket`` joga o card em ``todo`` e o board mente sobre onde o
+    trabalho está parado — e um humano arrastaria o card de volta sem saber que há
+    uma decisão pendente.
+    """
+    names = [c["name"] for c in client.get("/api/plugins/kanban/board").json()["columns"]]
+    assert "waiting_approval" in names
+    assert set(names) == kb.VALID_STATUSES - {"archived"}
+
+
+def test_drag_out_of_waiting_approval_is_refused(client):
+    """E-8: arrastar não tira o card da espera humana (contrato t_78aaa333).
+
+    O drag chega como PATCH de status sem verbo estruturado. Se passasse, a
+    aprovação viraria um booleano que qualquer gesto de UI marca.
+    """
+    tid = _parked_on_approval(client)
+    assert _status_on_board(client, tid) == "waiting_approval"
+
+    r = client.patch(f"/api/plugins/kanban/tasks/{tid}", json={"status": "ready"})
+    assert r.status_code == 400
+    assert "approval" in r.json()["detail"].lower()
+    assert _status_on_board(client, tid) == "waiting_approval"
+
+    # Controle POSITIVO: o mesmo PATCH move um card que NÃO está esperando aprovação.
+    outro = client.post(
+        "/api/plugins/kanban/tasks", json={"title": "livre"}).json()["task"]["id"]
+    assert client.patch(
+        f"/api/plugins/kanban/tasks/{outro}", json={"status": "ready"}).status_code == 200
+    assert _status_on_board(client, outro) == "ready"
+
+
+def test_bulk_cannot_drain_cards_out_of_waiting_approval(client):
+    """E-8: o caminho em lote é o mesmo dispatch — e é recusado igual.
+
+    Um bulk que ignorasse a guarda esvaziaria a coluna inteira de um clique,
+    autorizando em massa escritas que nenhum humano leu.
+    """
+    parado = _parked_on_approval(client, "parado")
+    livre = client.post(
+        "/api/plugins/kanban/tasks", json={"title": "livre"}).json()["task"]["id"]
+
+    r = client.post("/api/plugins/kanban/tasks/bulk",
+                    json={"ids": [parado, livre], "status": "ready"})
+    assert r.status_code == 200
+    por_id = {item["id"]: item for item in r.json()["results"]}
+    assert por_id[parado]["ok"] is False
+    assert "approval" in por_id[parado]["error"].lower()
+    # Controle POSITIVO no mesmo lote: o card livre passou, então a guarda é seletiva.
+    assert por_id[livre]["ok"] is True
+
+    assert _status_on_board(client, parado) == "waiting_approval"
+    assert _status_on_board(client, livre) == "ready"
+
+
+def test_waiting_approval_is_not_reachable_by_a_generic_verb(client):
+    """E-8: ninguém ENTRA na espera por PATCH — só ``pause_for_approval`` põe lá.
+
+    Entrar por fora criaria um card esperando uma decisão que não existe no
+    journal: o botão de aprovar não teria o que consumir e o card ficaria preso.
+    A mensagem tem de falar de DESTINO — dizer "unknown status" mentiria, porque o
+    estado é válido, só não é alcançável daqui.
+    """
+    tid = client.post("/api/plugins/kanban/tasks", json={"title": "x"}).json()["task"]["id"]
+    r = client.patch(f"/api/plugins/kanban/tasks/{tid}", json={"status": "waiting_approval"})
+    assert r.status_code == 400
+    detalhe = r.json()["detail"]
+    assert "unknown status" not in detalhe.lower(), detalhe
+    assert "approval" in detalhe.lower()
+    assert _status_on_board(client, tid) != "waiting_approval"
+
+
+def test_layer_one_guard_holds_when_the_pause_races_the_drag(client):
+    """E-8 camada 1: a cláusula dentro do txn é a que garante, não a que avisa.
+
+    ``_apply_status`` lê o status e só então chama o handler; uma pausa que caia
+    nesse intervalo passaria pela camada 2. Aqui o card é pausado DEPOIS da leitura
+    de origem e o handler é chamado direto — exatamente a corrida — e a escrita tem
+    de ser recusada mesmo assim.
+
+    Sem controle negativo separado, apagar a cláusula do UPDATE não deixaria
+    nenhuma suíte vermelha: as demais entram pela camada 2.
+    """
+    mod = _load_plugin_module()
+    tid = _parked_on_approval(client, "corrida")
+
+    conn = kbc.connect(kb.kanban_db_path())
+    try:
+        # Chamada DIRETA ao handler, como se a camada 2 já tivesse lido 'running'.
+        assert mod._set_status_direct(conn, tid, "ready") is False
+        assert kb.get_task(conn, tid).status == "waiting_approval"
+
+        # Controle POSITIVO: o mesmo handler move um card que não está na espera.
+        outro = kb.create_task(conn, title="livre", assignee="executor")
+        kb.recompute_ready(conn)
+        assert mod._set_status_direct(conn, outro, "todo") is True
+        assert kb.get_task(conn, outro).status == "todo"
+    finally:
+        conn.close()
+
+
+def test_waiting_approval_is_not_in_the_status_handler_table():
+    """E-8: não existe verbo de dashboard que LEVE a ``waiting_approval``.
+
+    A recusa explícita em ``_apply_status`` é a mensagem; a ausência na tabela de
+    handlers é a razão pela qual nenhum caminho novo pode criar a transição por
+    engano — um handler futuro registrado aqui seria a porta de entrada.
+    """
+    mod = _load_plugin_module()
+    assert "waiting_approval" not in mod._STATUS_HANDLERS
+    assert "running" not in mod._STATUS_HANDLERS, (
+        "invariante irmã quebrou: 'running' também não é destino de verbo genérico")
 
 
 def test_bulk_status_running_rejected(client):

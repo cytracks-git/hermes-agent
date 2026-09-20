@@ -855,6 +855,10 @@ _TASK_RUN_COLUMNS = (
     # Spawn-time start fingerprint of the run's worker_pid (PID-reuse guard for the
     # terminal-worker reaper; NULL = legacy row, never signalled).
     ("worker_started_at", "worker_started_at INTEGER"),
+    # Contabilidade da espera humana de aprovacao (contrato t_78aaa333 T-3). DDL
+    # identico ao de SCHEMA_SQL; 0/NULL reproduz o comportamento pre-coluna.
+    ("approval_wait_seconds", "approval_wait_seconds INTEGER NOT NULL DEFAULT 0"),
+    ("approval_paused_at", "approval_paused_at INTEGER"),
 )
 
 
@@ -946,6 +950,15 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
 
     _rebuild_drifted_tables(conn)
 
+    # Journal de aprovacao humana persistente (contrato t_78aaa333 §3.4). Aditivo:
+    # boards antigos ganham a tabela e seguem abrindo (M-1), nenhuma linha de
+    # ``tasks`` e reescrita (M-2), e um board antigo nao tem card em
+    # ``waiting_approval`` para converter (M-3). Fica no fim porque nao depende de
+    # nenhuma coluna migrada acima.
+    from hermes_cli.kanban_db_approvals import APPROVALS_SCHEMA_SQL
+
+    conn.executescript(APPROVALS_SCHEMA_SQL)
+
 
 def _backfill_legacy_inflight_runs(conn: sqlite3.Connection) -> None:
     """One-shot backfill: tasks 'running' before runs existed carried
@@ -1033,6 +1046,7 @@ _REBUILD_SPECS = {
         " task_id TEXT NOT NULL, profile TEXT, step_key TEXT,"
         " status TEXT NOT NULL, claim_lock TEXT, claim_expires INTEGER,"
         " worker_pid INTEGER, worker_started_at INTEGER, max_runtime_seconds INTEGER,"
+        " approval_wait_seconds INTEGER NOT NULL DEFAULT 0, approval_paused_at INTEGER,"
         " last_heartbeat_at INTEGER, started_at INTEGER NOT NULL,"
         " ended_at INTEGER, outcome TEXT, summary TEXT, metadata TEXT,"
         " error TEXT)",

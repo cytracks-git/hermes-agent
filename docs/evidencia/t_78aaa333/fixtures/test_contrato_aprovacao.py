@@ -327,16 +327,22 @@ def test_c12_c13_consumo_e_uso_unico(tmp_path):
 # §3 — peças que AINDA NÃO existem (RED esperado, exigido pelo contrato)
 # ==========================================================================
 
-@pytest.mark.xfail(reason="contrato v2 §3 E-1: estado ainda não implementado", strict=True)
 def test_c03_c04_estado_waiting_approval_existe():
-    """C-03/C-04: estado próprio, válido mas nunca inicial."""
+    """C-03/C-04: estado próprio, válido mas nunca inicial.
+
+    Era xfail estrito enquanto o estado não existia; virou positivo na etapa 2 da
+    implementação (``kanban_db.VALID_STATUSES``).
+    """
     assert "waiting_approval" in kanban_db.VALID_STATUSES
     assert "waiting_approval" not in kanban_db.VALID_INITIAL_STATUSES
 
 
-@pytest.mark.xfail(reason="contrato v2 §3.4: journal ainda não migrado", strict=True)
 def test_c09_journal_approval_requests_existe(conn):
-    """C-09: a migração aditiva cria ``approval_requests`` em board novo e antigo."""
+    """C-09: a migração aditiva cria ``approval_requests`` em board novo e antigo.
+
+    Era xfail estrito; virou positivo na etapa 1 (DDL em ``kanban_db_approvals``,
+    aplicado por ``_migrate_add_optional_columns``).
+    """
     tabelas = {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
     assert "approval_requests" in tabelas
@@ -550,34 +556,37 @@ def test_c31_regiao_critica_serializa_entre_processos(tmp_path):
     assert open(marca_f).read().count("entrou") == 1, "dois processos entraram sob flock"
 
 
-def test_c32_saida_de_waiting_approval_por_verbo_generico_ainda_e_possivel(conn):
-    """C-32 (RED de v2 §3.2 E-8): hoje o UPDATE direto do dashboard não olha a ORIGEM.
+def test_c32_saida_de_waiting_approval_por_verbo_generico_e_recusada(conn):
+    """C-32 (v2 §3.2 E-8, implementado): a origem ``waiting_approval`` é guardada.
 
-    ``_set_status_direct`` (``plugin_api.py:703-731``) faz ``UPDATE tasks SET status=?``
-    sem cláusula sobre o status atual. Enquanto E-8 não for implementado, arrastar um
-    card de ``waiting_approval`` para ``ready`` sai da espera sem consumir grant.
+    Era o RED da v2 — ``_set_status_direct`` fazia ``UPDATE tasks SET status=?`` sem
+    cláusula sobre o status atual, então arrastar um card de ``waiting_approval`` para
+    ``ready`` saía da espera sem consumir grant.
 
-    A fixture reproduz a forma do UPDATE nativo contra a tabela real — não importa o
-    módulo do dashboard (que exige fastapi) — e falha quando a guarda de origem existir,
-    hora de trocar este xfail pelo positivo.
+    Esta fixture mede a FORMA do UPDATE contra a tabela real (não importa o módulo do
+    dashboard, que exige fastapi); o comportamento da implementação instalada é medido
+    em ``tests/plugins/test_kanban_dashboard_plugin.py``. Controle positivo na mesma
+    execução: a guarda não pode congelar um card que NÃO está na espera.
     """
     tid = _task(conn)
     conn.execute("UPDATE tasks SET status='waiting_approval' WHERE id=?", (tid,))
     conn.commit()
 
-    # Exatamente a forma da guarda que o contrato EXIGE (E-8, camada 1).
     cur = conn.execute(
         "UPDATE tasks SET status='ready' WHERE id=? AND status != 'waiting_approval'", (tid,))
     conn.commit()
-    assert cur.rowcount == 0, "guarda de origem funcionou na forma exigida por E-8"
-
-    # E a forma ATUAL do nativo (sem guarda de origem) ainda deixa escapar: é o RED.
-    cur = conn.execute("UPDATE tasks SET status='ready' WHERE id=?", (tid,))
-    conn.commit()
-    assert cur.rowcount == 1, "o UPDATE sem guarda não alcançou a linha — medição inválida"
+    assert cur.rowcount == 0, "a guarda de origem de E-8 deixou o verbo genérico passar"
     assert conn.execute(
-        "SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "ready", (
-        "RED de C-32: sem E-8, o verbo genérico tira o card da espera humana")
+        "SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "waiting_approval"
+
+    # Controle POSITIVO: a mesma guarda move um card que não está esperando aprovação.
+    outro = _task(conn)
+    conn.execute("UPDATE tasks SET status='todo' WHERE id=?", (outro,))
+    conn.commit()
+    cur = conn.execute(
+        "UPDATE tasks SET status='ready' WHERE id=? AND status != 'waiting_approval'", (outro,))
+    conn.commit()
+    assert cur.rowcount == 1, "a guarda travou tudo — a fixture não distingue origem"
 
 
 def test_c33_uma_pendencia_por_run_e_constraint_do_banco(tmp_path):

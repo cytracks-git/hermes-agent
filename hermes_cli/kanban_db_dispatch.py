@@ -654,6 +654,7 @@ def enforce_max_runtime(conn: sqlite3.Connection, *, signal_fn=None) -> list[str
     rows = conn.execute(
         "SELECT t.id, t.worker_pid, t.worker_started_at, "
         "       COALESCE(r.started_at, t.started_at) AS active_started_at, "
+        "       COALESCE(r.approval_wait_seconds, 0) AS approval_wait_seconds, "
         "       t.max_runtime_seconds, t.claim_lock "
         "FROM tasks t "
         "LEFT JOIN task_runs r ON r.id = t.current_run_id "
@@ -666,8 +667,12 @@ def enforce_max_runtime(conn: sqlite3.Connection, *, signal_fn=None) -> list[str
         if not lock.startswith(host_prefix):
             continue
         # Runtime is per attempt: ``tasks.started_at`` records the FIRST start,
-        # so retries must be measured from the active task_runs row.
-        elapsed = now - int(row["active_started_at"])
+        # so retries must be measured from the active task_runs row. Time the run
+        # spent parked in ``waiting_approval`` is discounted: a human taking a day
+        # to answer an approval prompt must not read as an agent that wedged
+        # (contrato t_78aaa333 T-3).
+        elapsed = now - int(row["active_started_at"]) - int(
+            _kb._row_get(row, "approval_wait_seconds") or 0)
         limit = int(row["max_runtime_seconds"])
         if elapsed < limit:
             continue

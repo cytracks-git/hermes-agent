@@ -166,7 +166,10 @@ def _errors_to_500(prefix: str) -> Iterator[None]:
 
 # Dashboard columns, left-to-right ("archived" is a filter toggle, not a column). Keep in
 # sync with kanban_db.VALID_STATUSES — a status missing here gets mis-bucketed into ``todo``.
-BOARD_COLUMNS: list[str] = ["triage", "todo", "scheduled", "ready", "running", "blocked", "review", "done"]
+BOARD_COLUMNS: list[str] = [
+    "triage", "todo", "scheduled", "ready", "running", "waiting_approval",
+    "blocked", "review", "done",
+]
 
 _CARD_SUMMARY_PREVIEW_CHARS = 200
 
@@ -532,6 +535,20 @@ class _StatusRejected(Exception):
 
 _RUNNING_DIRECT_MSG = "Cannot set status to 'running' directly; use the dispatcher/claim path"
 
+# Um card em ``waiting_approval`` só sai pela decisão humana (endpoint próprio) ou
+# pela varredura de órfãs. Arrastar/PATCH/bulk sairia da espera sem consumir o grant
+# — a aprovação viraria um booleano que qualquer verbo genérico marca (contrato E-8).
+_WAITING_APPROVAL_ORIGIN_MSG = (
+    "Cannot move a card out of 'Waiting approval' from here; answer the approval "
+    "request on the card (Approve / Deny) instead")
+
+# Entrar na espera e coisa distinta de sair dela, e a mensagem tem de dizer qual das
+# duas o operador tentou. A recusa generica ("unknown status") mentiria: o estado E
+# valido, so nao e um destino que a UI alcance.
+_WAITING_APPROVAL_DESTINATION_MSG = (
+    "Cannot set status to 'Waiting approval' directly; a card enters that state only "
+    "when a worker asks for approval")
+
 
 def _drag_to(conn, task_id: str, s: str) -> bool:
     """Drag-drop into ready/todo/triage: blocked/scheduled -> ready re-opens via ``unblock_task``;
@@ -562,9 +579,20 @@ _STATUS_HANDLERS: dict[str, Any] = {
 
 def _apply_status(conn, task_id: str, s: str, p, unknown_detail: str) -> bool:
     """Dispatch a status verb; raises ``_StatusRejected`` (user-facing message)
-    for ``running`` or an unknown status (``unknown_detail``)."""
+    for ``running``, for a card currently parked in ``waiting_approval``, or an
+    unknown status (``unknown_detail``)."""
     if s == "running":
         raise _StatusRejected(_RUNNING_DIRECT_MSG)
+    if s == "waiting_approval":
+        # Não é destino atingível por verbo genérico: só ``pause_for_approval``,
+        # que exige uma approval_request criada pela guarda protegida.
+        raise _StatusRejected(_WAITING_APPROVAL_DESTINATION_MSG)
+    # Guarda de ORIGEM (camada 2; a camada 1 é a cláusula no UPDATE de
+    # ``_set_status_direct``). Vale para PATCH /tasks/{id} e POST /tasks/bulk, que
+    # compartilham este dispatch.
+    current = kanban_db.get_task(conn, task_id)
+    if current is not None and current.status == "waiting_approval":
+        raise _StatusRejected(_WAITING_APPROVAL_ORIGIN_MSG)
     handler = _STATUS_HANDLERS.get(s)
     if handler is None:
         raise _StatusRejected(unknown_detail)
@@ -703,7 +731,17 @@ def _parents_blocking_ready(conn: sqlite3.Connection, task_id: str) -> list:
 def _set_status_direct(conn: sqlite3.Connection, task_id: str, new_status: str) -> bool:
     """Direct status write for drag-drop moves without a structured verb (todo<->ready,
     running<->ready) + a ``status`` event. Leaving ``running`` closes the run as 'reclaimed'
-    so attempt history isn't orphaned; the worker is killed only AFTER the txn commits."""
+    so attempt history isn't orphaned; the worker is killed only AFTER the txn commits.
+
+    ``AND status != 'waiting_approval'`` is the origin guard (contrato E-8, camada 1):
+    a card parked on a human approval only leaves that state through the decision
+    endpoint or the orphan sweep, never through a drag.
+
+    ``_apply_status`` refuses the same origin BEFORE the txn (camada 2) with an
+    actionable message, and that is the layer users hit — but it reads the status and
+    only then calls this handler, so a pause landing in between would slip through.
+    This clause is inside the write txn and is the only race-free one; camada 2 exists
+    for the message, camada 1 for the guarantee."""
     terminations: list[tuple[Optional[int], Optional[str], Optional[int]]] = []
     effective_status = new_status
     with kanban_db.write_txn(conn):
@@ -727,7 +765,7 @@ def _set_status_direct(conn: sqlite3.Connection, task_id: str, new_status: str) 
             "  claim_lock = CASE WHEN ? = 'running' THEN claim_lock ELSE NULL END, "
             "  claim_expires = CASE WHEN ? = 'running' THEN claim_expires ELSE NULL END, "
             "  worker_pid = CASE WHEN ? = 'running' THEN worker_pid ELSE NULL END "
-            "WHERE id = ?",
+            "WHERE id = ? AND status != 'waiting_approval'",
             (effective_status,) * 4 + (task_id,))
         if cur.rowcount != 1:
             return False
