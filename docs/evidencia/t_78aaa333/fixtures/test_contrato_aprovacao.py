@@ -623,8 +623,6 @@ def test_c33_uma_pendencia_por_run_e_constraint_do_banco(tmp_path):
     db.close()
 
 
-@pytest.mark.xfail(
-    reason="contrato v3 §5 U-4: 'approval_requested' ainda não é kind notificável", strict=True)
 def test_c35_approval_requested_e_notificavel_nas_duas_listas():
     """C-35: o aviso da origem depende das DUAS listas espelhadas.
 

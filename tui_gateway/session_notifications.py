@@ -131,9 +131,9 @@ def _notification_event_dedup_key(evt: dict) -> tuple:
     return (evt.get("session_id", ""), evt_type, *(evt.get(f, 0 if f == "suppressed" else "") for f in extra))
 
 
-# Mirror gateway/kanban_watchers.py TERMINAL_KINDS: claim silent kinds (archived/unblocked) too so the cursor advances
-# past them and they can't wedge a later completed/blocked event behind an unclaimed row.
-_KANBAN_NOTIFY_KINDS = ("completed", "blocked", "gave_up", "crashed", "timed_out", "status", "archived", "unblocked")
+# Kinds atendidos pelo TUI; aprovação avisa a pessoa, sem turno de modelo.
+# archived/unblocked avançam o cursor silenciosamente.
+_KANBAN_NOTIFY_KINDS = ("completed", "blocked", "gave_up", "crashed", "timed_out", "status", "archived", "unblocked", "approval_requested")
 _KANBAN_POLL_SECONDS = _LOOP_POLL_SECONDS = 5.0  # /loop and /heartbeat share one idle-poll cadence
 
 
@@ -316,6 +316,9 @@ def _kb_timed_out(task, payload: dict, title: str) -> str:
 
 # kind -> (glyph, suffix after "Kanban <id>"); silent kinds (archived/unblocked) are absent → None.
 _KANBAN_EVENT_FORMATTERS = {
+    "approval_requested": ("🔐", lambda t, p, title: f" needs file approval — {title}. "
+                           f"Request {p.get('request_id', '')}. Open File approvals in Kanban. "
+                           "Comments do not authorize writes."),
     "completed": ("✔", _kb_completed),
     "blocked": ("⏸", lambda t, p, title: " blocked" + (f": {str(p.get('reason'))[:160]}" if p.get("reason") else "")),
     "gave_up": ("✖", lambda t, p, title: " gave up after repeated spawn failures"
@@ -349,7 +352,7 @@ def _kb_board_key(_kb, board_meta) -> tuple[str, str]:
         return slug, f"slug:{slug}"
 
 
-def _kb_poll_board(_kb, slug: str, session_key: str) -> list:
+def _kb_poll_board(_kb, slug: str, session_key: str, approval_delivery=None) -> list:
     """Claim + format this session's unseen events on one board. One poller per live session: the board is not opened
     writable unless it has a subscription owned by this exact session (a failed read-only probe — locked/corrupt DB —
     falls through so delivery is preserved)."""
@@ -381,6 +384,20 @@ def _kb_poll_board(_kb, slug: str, session_key: str) -> list:
             from gateway.warning_notifications import DiagnosticText
             for ev in events:
                 text = _format_kanban_event_text(sub, task, ev, slug)
+                if ev.kind == "approval_requested":
+                    if ev.id <= (sub.get("last_ping_event_id") or 0):
+                        continue
+                    try:
+                        delivered = bool(text and approval_delivery and approval_delivery(text))
+                    except Exception as exc:
+                        _notif_log_failure("kanban approval delivery failed", exc)
+                        delivered = False
+                    if not delivered:
+                        # Falha de transporte não vira recibo nem acorda modelo.
+                        _kbn.rewind_notify_cursor(conn, claimed_cursor=_new, old_cursor=ev.id - 1, **sub_ident)
+                        break
+                    _kbn.record_notify_ping(conn, event_id=ev.id, **sub_ident)
+                    continue
                 if text:
                     texts.append(DiagnosticText(text) if diagnostic_event(ev) else text)
             # Unsubscribe only on archive: ``done`` is reversible in review/controller flows, so keeping the sub lets a
@@ -391,7 +408,7 @@ def _kb_poll_board(_kb, slug: str, session_key: str) -> list:
     return texts
 
 
-def _collect_kanban_notifications(session: dict) -> list:
+def _collect_kanban_notifications(session: dict, approval_delivery=None) -> list:
     """Claim unseen terminal kanban events for this session's ``platform="tui"`` subscriptions (``kanban_create``
     auto-subscribes with ``chat_id=HERMES_SESSION_KEY``; no "tui" messaging adapter exists, so this poller is the
     delivery path). Same atomic cursor-claim as the gateway notifier: exactly-once even if a gateway polls the same DB.
@@ -416,7 +433,7 @@ def _collect_kanban_notifications(session: dict) -> list:
     unique = {}
     for slug, resolved in (_kb_board_key(_kb, board_meta) for board_meta in boards):
         unique.setdefault(resolved, slug)
-    return [t for slug in unique.values() for t in _kb_poll_board(_kb, slug, session_key)]
+    return [t for slug in unique.values() for t in _kb_poll_board(_kb, slug, session_key, approval_delivery)]
 
 
 def _notif_poll_kanban(sid: str, session: dict) -> None:
@@ -428,7 +445,8 @@ def _notif_poll_kanban_scoped(sid: str, session: dict) -> None:
     """One kanban poll: emit new texts, buffer them, and run the buffered batch as a turn if idle. Events are
     cursor-claimed (never re-queued), so they wait in the buffer instead of dropping the agent turn."""
     try:
-        texts = _collect_kanban_notifications(session)
+        texts = _collect_kanban_notifications(session, approval_delivery=lambda text:
+            _emit("status.update", sid, {"kind": "process", "text": text}))
     except Exception as exc:
         _notif_log_failure("kanban notification poll failed", exc)
         texts = []

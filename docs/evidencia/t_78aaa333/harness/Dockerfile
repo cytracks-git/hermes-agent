@@ -13,7 +13,8 @@ FROM kanban-body-t5a6:proof
 RUN pip install --no-cache-dir \
       fastapi==0.133.1 \
       starlette==0.52.1 \
-      python-multipart==0.0.20
+      python-multipart==0.0.20 \
+      uvicorn==0.35.0
 
 # `scripts/run_tests.sh` aceita HERMES_PYTHON quando nao ha venv local; e o
 # caminho previsto pelo proprio runner, nao um contorno.

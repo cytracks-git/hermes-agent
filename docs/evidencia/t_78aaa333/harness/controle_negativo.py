@@ -28,9 +28,11 @@ KB = RAIZ / "hermes_cli/kanban_db.py"
 KD = RAIZ / "hermes_cli/kanban_db_dispatch.py"
 KA = RAIZ / "hermes_cli/kanban_db_approvals.py"
 PA = RAIZ / "plugins/kanban/dashboard/plugin_api.py"
+FW = RAIZ / "tools/file_approval_worker.py"
 
 SUITE_NUCLEO = "tests/hermes_cli/test_kanban_approval_wait.py"
 SUITE_DASH = "tests/plugins/test_kanban_dashboard_plugin.py"
+SUITE_ARQUIVOS = "tests/tools/test_file_approval_worker.py"
 
 
 def roda(alvos: list[str], rotulo: str) -> tuple[int, list[str]]:
@@ -50,6 +52,11 @@ def roda(alvos: list[str], rotulo: str) -> tuple[int, list[str]]:
 
 # (rotulo, arquivo, trecho original, trecho sabotado, suites que devem acusar)
 SABOTAGENS = [
+    ("N12 revalidacao da preimagem/symlink some antes da escrita",
+     FW,
+     "                revalidate(payload)\n",
+     "                pass  # mutante: preimagem e symlink ignorados\n",
+     [SUITE_ARQUIVOS]),
     ("N1 pause mantem o claim: a espera humana ocupa vaga do orcamento",
      KB,
      "               SET status            = 'waiting_approval',\n"
@@ -130,7 +137,7 @@ SABOTAGENS = [
 
 def main() -> int:
     SAIDA.mkdir(parents=True, exist_ok=True)
-    todas = [SUITE_NUCLEO, SUITE_DASH]
+    todas = [SUITE_NUCLEO, SUITE_DASH, SUITE_ARQUIVOS]
 
     rc, ids = roda(todas, "base")
     print(f"=== BASE (sem sabotagem): rc={rc} falhas={len(ids)}")

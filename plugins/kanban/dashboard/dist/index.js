@@ -16,6 +16,9 @@
   if (!SDK) return;
 
   const { React } = SDK;
+  const approvalModule = new URL("approvals.js", document.currentScript.src).href;
+  const ApprovalPanel = React.lazy(() => import(approvalModule)
+    .then(module => ({ default: module.createApprovalPanel(SDK) })));
   const h = React.createElement;
   const {
     Card, CardContent,
@@ -96,6 +99,7 @@
     todo: "Todo",
     ready: "Ready",
     running: "In Progress",
+    waiting_approval: "Waiting for approval",
     blocked: "Blocked",
     review: "Review",
     done: "Done",
@@ -106,6 +110,7 @@
     todo: "Waiting on dependencies or unassigned",
     ready: "Dependencies satisfied; assign a profile to dispatch",
     running: "Claimed by a worker — in-flight",
+    waiting_approval: "Waiting for a human decision; no dispatch slot is held",
     blocked: "Worker asked for human input",
     review: "Implementation complete — awaiting review",
     done: "Completed",
@@ -2523,6 +2528,8 @@
     const tenants = (props.board && props.board.tenants) || [];
     const assignees = (props.board && props.board.assignees) || [];
     return h("div", { className: "flex flex-wrap items-end gap-3" },
+      props.board && props.board.pending_approvals !== undefined &&
+        h("span", { role: "status" }, `Pending approvals: ${props.board.pending_approvals}`),
       h("div", { className: "flex flex-col gap-1",
                  title: "Fuzzy-match tasks by id, title, or description. Matches across all columns." },
         h(Label, { className: "text-xs text-muted-foreground" }, tx(t, "search", "Search")),
@@ -3810,6 +3817,7 @@
           homeBusy: homeBusy,
           onToggleHomeSub: toggleHomeSubscription,
           onRefresh: props.onRefresh,
+          onApprovalRefresh: function () { load(); props.onRefresh(); },
           onUpload: handleUpload,
           onDeleteAttachment: handleDeleteAttachment,
           uploadBusy: uploadBusy,
@@ -4018,7 +4026,7 @@
         }) : null,
         t.created_by ? h(MetaRow, { label: tx(i18n, "createdBy", "Created by"), value: t.created_by }) : null,
       ),
-      h(StatusActions, {
+      t.status !== "waiting_approval" && h(StatusActions, {
         task: t,
         onPatch: props.onPatch,
         onSpecify: props.onSpecify,
@@ -4041,6 +4049,9 @@
         renderMarkdown: props.renderMarkdown,
         onPatch: props.onPatch,
       }),
+      h(React.Suspense, { fallback: h("p", null, "Loading file approvals…") },
+        h(ApprovalPanel, { key: `${props.boardSlug}:${t.id}`, task: t,
+          boardSlug: props.boardSlug, onRefresh: props.onApprovalRefresh })),
       h(DependencyEditor, {
         task: t,
         links, allTasks: props.allTasks,

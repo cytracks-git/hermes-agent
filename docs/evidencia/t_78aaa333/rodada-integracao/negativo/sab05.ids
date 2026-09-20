@@ -1,0 +1,1 @@
+tests/hermes_cli/test_kanban_approval_wait.py::test_human_wait_does_not_consume_max_runtime

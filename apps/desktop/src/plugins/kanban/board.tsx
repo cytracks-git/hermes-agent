@@ -1333,6 +1333,11 @@ export function KanbanBoardPage() {
         <span className="rounded-full bg-(--ui-bg-quaternary) px-1.5 py-px text-[0.625rem] tabular-nums text-(--ui-text-tertiary)">
           {total}
         </span>
+        {board?.pending_approvals !== undefined && (
+          <span role="status" className="text-xs text-foreground">
+            Pending approvals: {board.pending_approvals}
+          </span>
+        )}
         {board && (
           <FilterMenu
             archived={archived}

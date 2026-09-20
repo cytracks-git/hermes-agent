@@ -30,7 +30,20 @@ export interface KanbanColumn {
   tasks: KanbanTask[]
 }
 
+export interface KanbanApproval {
+  request_id: string
+  request_hash: string
+  state: string
+  profile_home: string
+  run_id: number
+  decided_by: string | null
+  decided_at: number | null
+  applied_at: number | null
+  payload_json: string
+}
+
 export interface KanbanBoard {
+  pending_approvals?: number
   columns: KanbanColumn[]
   tenants: string[]
   assignees: string[]
@@ -220,6 +233,7 @@ export const COLUMN_META: Record<string, { codicon: string; tone: string }> = {
   scheduled: { codicon: 'watch', tone: '#a78bfa' },
   ready: { codicon: 'play-circle', tone: '#60a5fa' },
   running: { codicon: 'sync', tone: '#34d399' },
+  waiting_approval: { codicon: 'shield', tone: '#fbbf24' },
   blocked: { codicon: 'error', tone: '#f87171' },
   review: { codicon: 'eye', tone: '#fbbf24' },
   done: { codicon: 'pass', tone: 'var(--ui-text-tertiary)' },

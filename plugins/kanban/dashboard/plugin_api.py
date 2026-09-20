@@ -315,6 +315,7 @@ def get_board(
             "SELECT DISTINCT assignee FROM tasks WHERE assignee IS NOT NULL AND status != 'archived' ORDER BY assignee")]
         return {
             "columns": [{"name": name, "tasks": columns[name]} for name in columns], "tenants": tenants,
+            "pending_approvals": conn.execute("SELECT COUNT(*) FROM approval_requests WHERE state='pending'").fetchone()[0],
             "assignees": assignees, "latest_event_id": int(latest_event_id), "now": int(time.time())}
 
 
@@ -1787,3 +1788,8 @@ async def stream_events(ws: WebSocket):
             pass
     finally:
         await tail.shutdown()
+
+
+from plugins.kanban.dashboard.approval_api import create_approval_router
+
+router.include_router(create_approval_router(_board_conn))

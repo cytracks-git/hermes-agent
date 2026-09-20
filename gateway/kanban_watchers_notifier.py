@@ -34,6 +34,8 @@ def _kbn():
 # ``review_requested`` wakes the origin like a block but is not one;
 # the task is not archived so later review cycles keep notifying.
 TERMINAL_KINDS = ("completed", "blocked", "gave_up", "crashed", "timed_out", "status", "archived", "unblocked", "block_loop_detected", "review_requested", "changes_requested")
+# Aprovação avisa a pessoa; nunca acorda modelo para decidir por ela.
+TERMINAL_KINDS += ("approval_requested",)
 # Kinds that hand a decision back to the origin, which must take a turn.
 # status/archived/unblocked are bookkeeping.
 _WAKE_KINDS = ("completed", "gave_up", "crashed", "timed_out", "blocked", "review_requested", "changes_requested", "block_loop_detected")
@@ -433,6 +435,12 @@ def _fmt_timed_out(ev, n) -> tuple:
 # intentionally silent (no formatter), and excluded from _WAKE_KINDS so they
 # never wake the creator.
 _EVENT_FORMATTERS: dict[str, Callable[[Any, "_KanbanNotification"], tuple]] = {
+    "approval_requested": lambda ev, n: (
+        f"🔐 {n.head} needs file approval — {n.title}. "
+        f"Request {_payload(ev, 'request_id')}. Open the task's File approvals in Kanban "
+        "to inspect the exact content and approve once, deny, or cancel. Comments do not authorize writes.",
+        None, None,
+    ),
     "completed": _fmt_completed,
     "blocked": lambda ev, n: (f"⏸ {n.head} blocked{_clip(ev, 'reason', ': {}', 160)}", None, None),
     "gave_up": _fmt_gave_up,

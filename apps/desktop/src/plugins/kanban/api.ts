@@ -30,6 +30,7 @@ import type {
   KanbanProject,
   KanbanTask,
   KanbanTaskDetail,
+  KanbanApproval,
   OrchestrationSettings,
   TaskEstimate,
   WorkerLog
@@ -173,6 +174,14 @@ export const fetchBoard = (archived: boolean) =>
   call<KanbanBoard>(withBoard('/board', archived ? { include_archived: 'true' } : {}))
 
 export const fetchTask = (id: string) => call<KanbanTaskDetail>(withBoard(`/tasks/${id}`))
+
+export const fetchApprovals = (id: string) =>
+  call<{ approvals: KanbanApproval[] }>(withBoard(`/tasks/${id}/approvals`))
+
+export const decideApproval = (taskId: string, approval: KanbanApproval, decision: 'granted' | 'denied' | 'cancelled') =>
+  call(withBoard(`/tasks/${taskId}/approvals/${approval.request_id}/decision`), {
+    method: 'POST', body: { decision, request_hash: approval.request_hash }
+  })
 
 /** Worker stdout/stderr tail (last 16 KiB — plenty for the drawer). */
 export const fetchLog = (id: string) => call<WorkerLog>(withBoard(`/tasks/${id}/log`, { tail: '16384' }))

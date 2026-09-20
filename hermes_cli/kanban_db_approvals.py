@@ -86,6 +86,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_appr_one_pending_per_run
 -- A varredura de orfas percorre exatamente as nao-aplicadas.
 CREATE INDEX IF NOT EXISTS idx_appr_unapplied
   ON approval_requests(state) WHERE applied_at IS NULL;
+CREATE TRIGGER IF NOT EXISTS appr_immutable_identity
+BEFORE UPDATE OF task_id, run_id, claim_lock, profile_home, session_key,
+    workspace_path, created_by_pid, created_by_started_at, payload_json,
+    request_hash, created_at ON approval_requests
+BEGIN
+    SELECT RAISE(ABORT, 'approval identity and payload are immutable');
+END;
 """
 
 

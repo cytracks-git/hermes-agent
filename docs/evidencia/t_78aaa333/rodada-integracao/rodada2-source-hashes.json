@@ -1,0 +1,72 @@
+[
+  {
+    "path": "tools/file_tools.py",
+    "same": true,
+    "sha256": "17b671e41edb624ea9a02259f5eac2f704ff25b940478b4176213263aea4a65f"
+  },
+  {
+    "path": "tools/file_approval_payload.py",
+    "same": true,
+    "sha256": "2110236f339f9299d7057d9bb2e2667c8d9c0bbf5712b9fe520fe0a476751bda"
+  },
+  {
+    "path": "tools/file_approval_worker.py",
+    "same": true,
+    "sha256": "b1db84678212afbff0bf07b44b64dbd22689091cca73cb3e8167fcc8b3490a24"
+  },
+  {
+    "path": "hermes_cli/kanban_db.py",
+    "same": true,
+    "sha256": "22e28966ed75dcb18b3bfed7497fe26a88b8eab2d36b040c49c5e0ba718e0e5d"
+  },
+  {
+    "path": "hermes_cli/kanban_db_approvals.py",
+    "same": true,
+    "sha256": "96252f15324f4659f0a79fdef8eeb5c6c62476411a00c3b8564d4a60258bf194"
+  },
+  {
+    "path": "hermes_cli/kanban_db_dispatch.py",
+    "same": true,
+    "sha256": "5a5e88f2593ba5368df2588256260e0534a361b7165d4713aa3f796c68f55fd2"
+  },
+  {
+    "path": "hermes_cli/kanban_approval_lifecycle.py",
+    "same": true,
+    "sha256": "fb46d24fc1594550c3a541991d30fc4688ee8214be5bd06f75d0c684443ba4b7"
+  },
+  {
+    "path": "plugins/kanban/dashboard/approval_api.py",
+    "same": true,
+    "sha256": "bc911bd5717a2f58e953913620187a84aa32a8fb76e6200cde4f368bbae52ecc"
+  },
+  {
+    "path": "plugins/kanban/dashboard/plugin_api.py",
+    "same": true,
+    "sha256": "029d66503b0949af72015c2b245535a134314f684681d39bf731b6e776631233"
+  },
+  {
+    "path": "plugins/kanban/dashboard/dist/approvals.js",
+    "same": true,
+    "sha256": "7270304310b398bd36d1bb3bee5c0c329d67c64cf7ff9d57bd08542f7c95de77"
+  },
+  {
+    "path": "plugins/kanban/dashboard/dist/index.js",
+    "same": true,
+    "sha256": "97c3a4f20180bf1ba7e1e5e3b9903b1c03409396ceaec494d3aa93a66fa47712"
+  },
+  {
+    "path": "tui_gateway/session_notifications.py",
+    "same": true,
+    "sha256": "dfc05f3f0762c3925f7ad9f6359e4112822b3cb9ef84a5c13bf03a0aeee124e4"
+  },
+  {
+    "path": "gateway/kanban_watchers_notifier.py",
+    "same": true,
+    "sha256": "bf43754538c1399b38b27f8d04ed413b0c0276ceef099b4e5c0c0074a9acecd8"
+  },
+  {
+    "path": "tests/tools/test_file_approval_worker.py",
+    "same": true,
+    "sha256": "a55b5eec463d8f5bb828cafc6ca56eb5985ee9df562a894ff5796175d1eb9ecc"
+  }
+]

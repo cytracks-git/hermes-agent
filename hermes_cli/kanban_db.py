@@ -3891,7 +3891,7 @@ def pause_for_approval(
     humana não é falha.
     """
     now = int(time.time())
-    with write_txn(conn):
+    with write_txn(conn, allow_nested=True):
         cur = conn.execute(
             """
             UPDATE tasks
@@ -3950,7 +3950,7 @@ def resume_from_pause(
     """
     now = int(time.time())
     expires = now + _resolve_claim_ttl_seconds(ttl_seconds)
-    with write_txn(conn):
+    with write_txn(conn, allow_nested=True):
         cur = conn.execute(
             """
             UPDATE tasks
@@ -3962,8 +3962,10 @@ def resume_from_pause(
                    last_heartbeat_at = ?
              WHERE id = ?
                AND status = 'waiting_approval'
+               AND current_run_id = ?
             """,
-            (claim_lock, expires, int(worker_pid), worker_started_at, now, task_id),
+            (claim_lock, expires, int(worker_pid), worker_started_at, now, task_id,
+             int(expected_run_id)),
         )
         if cur.rowcount != 1:
             return False
@@ -4013,7 +4015,7 @@ def end_approval_wait(
     if outcome not in APPROVAL_EXIT_EVENTS:
         raise ValueError(f"outcome must be one of {sorted(APPROVAL_EXIT_EVENTS)}, got {outcome!r}")
     now = int(time.time())
-    with write_txn(conn):
+    with write_txn(conn, allow_nested=True):
         row = conn.execute(
             "SELECT current_run_id, block_kind, block_recurrences FROM tasks WHERE id = ?",
             (task_id,),
