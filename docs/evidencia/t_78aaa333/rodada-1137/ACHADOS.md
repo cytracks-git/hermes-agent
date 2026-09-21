@@ -133,15 +133,68 @@ dois e o escopo C28. Ficam como achado com prova, para o orquestrador rotear.
 
 ## 5. O que sobreviveu (retomada conferida por conteudo, nao por PID)
 
+O `checkpoint-atividade.sh` rodou nos dois lados e o `diff` dos dois arquivos e
+a prova — tres linhas de diferenca, todas explicadas:
+
+    20c20
+    < 20260920_164003_9511e3|60|1789954788|Otimizar skills, agents
+    > 20260920_164003_9511e3|68|1789956892|Otimizar skills, agents
+    24d23
+    < 584|t_f4d1c062|4356
+
+- a sessao 9511e3 GANHOU 8 mensagens (60 -> 68): o operador seguiu conversando
+  durante a janela. Nao perdeu nada; avancou.
+- a run 584 saiu da lista de abertas porque TERMINOU sozinha: consultada no
+  banco, `ended_at=22:54:26 outcome=completed`, card t_f4d1c062 agora `done`.
+  Concluiu, nao foi morta. Ela nasceu as 22:44 e atravessou a janela inteira.
+- as outras 14 sessoes abertas: contagens identicas nos dois lados.
 - worker deste card (98991): vivo o tempo todo, nunca foi alvo.
-- worktree `executor/kanban-aprovacao-interativa` em 82606b2d56f: intacto, so com
-  os arquivos novos desta rodada como untracked. O commit do card continua
-  existindo como objeto na instalacao (`git cat-file -t 643ffa7a82c` = commit),
-  entao nada foi perdido — so desreferenciado.
-- runs Kanban abertas e jobs de cron: zero nos dois lados (checkpoint-antes.txt).
-  Nao havia cron ativo em nenhum dos 5 perfis, entao nao houve o que retomar.
-- sessoes desktop: as 4 abertas continuam no `state.db` com as mesmas contagens;
-  nenhuma foi encerrada por mim.
+- worktree `executor/kanban-aprovacao-interativa`: intacto; os 10 commits do
+  card seguem alcancaveis pelo branch mesmo com a instalacao de volta em main
+  (`git rev-list --count eaef5ec7178..executor/kanban-aprovacao-interativa` = 10).
+- cron: 0 jobs ativos ANTES; 8 DEPOIS (default 7, executor 1). Nao foi o rollout
+  que os criou — o gateway novo (pid 15290) recarregou os jobs que ja existiam
+  no disco; o gateway velho havia sido iniciado antes deles. Nada foi retomado
+  em duplicata por mim: eu nao iniciei job algum.
 
 Nenhuma atividade util foi morta nesta janela. O que quebrou foi o proprio
 rollout, por um update automatico — nao o trabalho do operador.
+
+## 6. Fim da espera: o update terminou pela via suportada
+
+23:13:32–23:13:59, sem intervencao minha: `✓ Service restart requested`,
+`✓ Restarted ai.hermes.gateway`, gateway novo pid 15290 @ eaef5ec7, servindo os
+5 perfis, dispatcher do Kanban de volta. O drain de 30min nao chegou ao fim —
+o updater desistiu da espera e reiniciou, como projetado. Total de espera
+observada: ~18min de mensagens falsas sobre "arquivo ilegivel".
+
+Eu nao matei o gateway travado. Ele foi substituido pelo proprio fluxo do
+updater.
+
+## 7. Por que C28 PARA aqui, e nao "quase la"
+
+Para colocar o painel no bundle vivo eu precisaria: rebuild + fechar/reabrir o
+Hermes.app. Medido as 23:19 e 23:23, o porteiro fecha a janela:
+
+    20260920_041002_636708 ult=23:22:15
+    20260920_164003_9511e3 ult=23:22:55
+    VEREDITO: JANELA FECHADA — esperar ponto seguro
+
+O operador voltou a trabalhar nas duas sessoes do Desktop. A restricao do H1 e
+explicita: aguardar ponto seguro, nunca matar trabalho util. Fechar o app agora
+derruba a interface de quem esta usando.
+
+E mesmo com a janela aberta, repetir o mesmo gesto daria o mesmo resultado: a
+instalacao volta para main no proximo relancamento, porque o poller de update do
+Desktop (`apps/desktop/src/store/updates.ts`, `startUpdatePoller`) dispara a
+atualizacao apontada para main sempre que o app sobe. Rebuild em cima de
+instalacao detached nao sobrevive ao proprio relancamento que o valida.
+
+As duas saidas possiveis sao decisao de quem manda, nao minha:
+  (a) apontar a instalacao para o BRANCH do card (nao detached) durante a
+      janela, para que um update na mesma branch nao desfaca o rebuild; ou
+  (b) suspender o auto-update do Desktop durante o rollout e religar depois.
+
+Ambas mexem em configuracao da instalacao compartilhada, que este card proibe
+sem revisao. Por isso: bloqueio com prova, nao "entrega parcial".
+
