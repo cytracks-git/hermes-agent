@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   calendarBucket,
+  coarseElapsed,
   DAY,
+  elapsedParts,
   fmtMonth,
   fmtMonthYear,
   formatAgo,
@@ -39,6 +41,49 @@ describe('formatAgo', () => {
 
   it('clamps future timestamps to "now"', () => {
     expect(ago(-HOUR)).toBe('now')
+  })
+})
+
+describe('elapsedParts', () => {
+  // A duration label that only ever shows ONE floored unit freezes: a card at
+  // 1h59m renders "1h" and does not move a pixel for 59 minutes (measured in
+  // the SERVED bundle, dist/assets/time-*.js). The second part is what makes
+  // the label live again, so every case below pins BOTH parts.
+  it('carries a second unit so hour- and day-scale labels keep moving', () => {
+    expect(elapsedParts(HOUR + 59 * MINUTE)).toEqual([
+      { unit: 'hour', value: 1 },
+      { unit: 'minute', value: 59 }
+    ])
+    expect(elapsedParts(2 * DAY + 4 * HOUR)).toEqual([
+      { unit: 'day', value: 2 },
+      { unit: 'hour', value: 4 }
+    ])
+    expect(elapsedParts(12 * MINUTE + 5 * SECOND)).toEqual([
+      { unit: 'minute', value: 12 },
+      { unit: 'second', value: 5 }
+    ])
+  })
+
+  it('drops a zero remainder instead of padding "1h 0m"', () => {
+    expect(elapsedParts(2 * HOUR)).toEqual([{ unit: 'hour', value: 2 }])
+    expect(elapsedParts(3 * DAY)).toEqual([{ unit: 'day', value: 3 }])
+  })
+
+  it('stops at seconds — the smallest unit has no remainder to show', () => {
+    expect(elapsedParts(42 * SECOND)).toEqual([{ unit: 'second', value: 42 }])
+    expect(elapsedParts(0)).toEqual([{ unit: 'second', value: 0 }])
+  })
+
+  it('clamps a negative delta (clock skew) to zero instead of rendering "-1s"', () => {
+    expect(elapsedParts(-5 * MINUTE)).toEqual([{ unit: 'second', value: 0 }])
+  })
+
+  it('agrees with coarseElapsed on the leading unit', () => {
+    // The new formatter must not silently reclassify magnitudes: same head,
+    // more detail. This is the positive control for the pair.
+    for (const delta of [0, 30 * SECOND, 5 * MINUTE, 3 * HOUR, 9 * DAY]) {
+      expect(elapsedParts(delta)[0]).toEqual(coarseElapsed(delta))
+    }
   })
 })
 

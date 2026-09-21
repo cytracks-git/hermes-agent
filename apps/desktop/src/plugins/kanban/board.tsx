@@ -229,8 +229,12 @@ function CardFooter({ arc, task }: { arc: ArcState | null; task: KanbanTask }) {
             {task.warnings.count}
           </span>
         )}
-        {created && !task.assignee && !unassignedReady ? (
-          <span className="text-(--ui-text-quaternary)">{created}</span>
+        {created && !unassignedReady ? (
+          // Idade do card na lista; duracao da tentativa somente no detalhe,
+          // que consulta task_runs em vez de reaproveitar started_at historico.
+          <Tip label={k.cardAge}>
+            <span className="cursor-help text-(--ui-text-quaternary)">{created}</span>
+          </Tip>
         ) : null}
         <span className="min-w-0 truncate font-mono text-(--ui-text-quaternary)">{shortId(task.id)}</span>
       </div>

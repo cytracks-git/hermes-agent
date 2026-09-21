@@ -214,6 +214,43 @@ export function coarseElapsed(deltaMs: number): { unit: ElapsedUnit; value: numb
   return { unit: 'second', value: Math.floor(ms / SECOND) }
 }
 
+/** One term of an elapsed label, e.g. `{unit: 'hour', value: 1}`. */
+export interface ElapsedPart {
+  unit: ElapsedUnit
+  value: number
+}
+
+const NEXT_SMALLER: Partial<Record<ElapsedUnit, ElapsedUnit>> = { day: 'hour', hour: 'minute', minute: 'second' }
+
+const UNIT_MS: Record<ElapsedUnit, number> = { day: DAY, hour: HOUR, minute: MINUTE, second: SECOND }
+
+/**
+ * Elapsed duration as its coarsest unit PLUS the remainder in the next unit
+ * down — `[1h, 59m]`, `[2d, 4h]`, `[12m, 5s]`.
+ *
+ * Por que existe, e nao so `coarseElapsed`: uma etiqueta de uma unidade so,
+ * arredondada para baixo, CONGELA. Um card em 1h59 mostra "1h" e nao mexe um
+ * pixel por 59 minutos — foi o que o H1 leu como contador parado. Medido no
+ * bundle SERVIDO (dist/assets/time-*.js do app.asar em execucao), nao no fonte.
+ *
+ * A unidade principal e exatamente a de `coarseElapsed` (mesma classificacao,
+ * mais detalhe). O resto e omitido quando e zero, para nao render "2h 0m", e
+ * `second` nao tem resto: e o menor termo. Quem renderiza decide o formato.
+ */
+export function elapsedParts(deltaMs: number): [ElapsedPart] | [ElapsedPart, ElapsedPart] {
+  const head = coarseElapsed(deltaMs)
+  const smaller = NEXT_SMALLER[head.unit]
+
+  if (!smaller) {
+    return [head]
+  }
+
+  const remainder = Math.max(0, deltaMs) - head.value * UNIT_MS[head.unit]
+  const value = Math.floor(remainder / UNIT_MS[smaller])
+
+  return value > 0 ? [head, { unit: smaller, value }] : [head]
+}
+
 // Localized strings for `formatAgo`; shaped to accept `t.agents` directly.
 export interface AgoLabels {
   ageNow: string

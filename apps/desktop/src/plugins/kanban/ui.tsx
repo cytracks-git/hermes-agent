@@ -3,12 +3,12 @@
 
 import {
   atom,
-  coarseElapsed,
   Codicon,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  elapsedParts,
   FadeScroll,
   profileColor,
   profileColorSoft,
@@ -76,20 +76,23 @@ export const ago = (seconds?: null | number): null | string => (seconds ? relati
 
 const ELAPSED_SUFFIX = { day: 'd', hour: 'h', minute: 'm', second: 's' } as const
 
-/** Compact run duration ("42s", "3m") off the canonical elapsed bucketing. */
+/** Compact run duration ("42s", "1h 23m") off the canonical elapsed bucketing.
+ *
+ *  Duas unidades de proposito: com uma so, um run de 1h59 aparecia como "1h" e
+ *  a etiqueta ficava 59 minutos sem mudar — foi lido como contador travado. */
 export function duration(start?: null | number, end?: null | number): null | string {
   if (!start || !end || end < start) {
     return null
   }
 
-  const { unit, value } = coarseElapsed((end - start) * 1000)
-
-  return `${value}${ELAPSED_SUFFIX[unit]}`
+  return elapsedParts((end - start) * 1000)
+    .map(part => `${part.value}${ELAPSED_SUFFIX[part.unit]}`)
+    .join(' ')
 }
 
 // ── liveness ─────────────────────────────────────────────────────────────────
 
-/** Live elapsed label ("34s", "2m") that keeps ticking while mounted. */
+/** Live elapsed label ("34s", "1h 23m") that keeps ticking while mounted. */
 function useTicking(start?: null | number): null | string {
   const [, force] = useState(0)
 
@@ -107,9 +110,9 @@ function useTicking(start?: null | number): null | string {
     return null
   }
 
-  const { unit, value } = coarseElapsed(Math.max(0, Date.now() - start * 1000))
-
-  return `${value}${ELAPSED_SUFFIX[unit]}`
+  return elapsedParts(Math.max(0, Date.now() - start * 1000))
+    .map(part => `${part.value}${ELAPSED_SUFFIX[part.unit]}`)
+    .join(' ')
 }
 
 export type ArcState = 'queued' | 'running' | 'stale'
@@ -138,18 +141,17 @@ export function arcState(task: KanbanTask, fallbackAssignee: string): ArcState |
   return queued ? 'queued' : null
 }
 
-/** Ticking "working · 34s" line for running cards (elapsed since claim). */
+/** A lista nao traz task_runs: nao rotular started_at historico como tentativa. */
 export function RunClock({ task }: { task: KanbanTask }) {
   const k = useKanban()
-  const elapsed = useTicking(task.started_at)
 
-  if (!elapsed) {
+  if (task.status !== 'running') {
     return null
   }
 
   return (
     <span className="shrink-0 font-medium" style={{ color: columnMeta('running').tone }}>
-      {k.working} · {elapsed}
+      {k.working}
     </span>
   )
 }

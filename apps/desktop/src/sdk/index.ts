@@ -1836,8 +1836,24 @@ export { evaluateRuntimeReadiness, type RuntimeReadinessResult } from '@/lib/run
  *  the compact suffixes (`t.sidebar.row.ageMin` → "52m"), which is what the
  *  session rows beside you do; `formatAgo` is the same buckets with an " ago"
  *  suffix. `relativeTime` is the bidirectional Intl form ("in 14 hr") — use it
- *  for a scheduled next-run, not for an age. */
-export { type AgoLabels, coarseElapsed, fmtDateTime, fmtDayTime, formatAgo, relativeTime } from '@/lib/time'
+ *  for a scheduled next-run, not for an age. For a LIVE duration (a clock that
+ *  must keep moving while you watch it), use `elapsedParts` instead: it carries
+ *  the remainder in the next unit down, so "1h 59m" ticks where a single
+ *  floored unit would sit frozen on "1h" for 59 minutes. */
+export {
+  type AgoLabels,
+  coarseElapsed,
+  DAY,
+  type ElapsedPart,
+  elapsedParts,
+  fmtDateTime,
+  fmtDayTime,
+  formatAgo,
+  HOUR,
+  MINUTE,
+  relativeTime,
+  SECOND
+} from '@/lib/time'
 /** The transcript as a contribution area: register a named `::directive{...}`
  *  and the model can render your component inline in assistant messages. */
 export {

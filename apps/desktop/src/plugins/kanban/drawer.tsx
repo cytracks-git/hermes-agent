@@ -30,6 +30,7 @@ import {
 } from '@hermes/plugin-sdk'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
+import { type CardActivity, cardActivity, formatElapsed } from './activity'
 import {
   $boardSlug,
   addComment,
@@ -168,6 +169,163 @@ function eventText(event: KanbanEvent, k: KanbanText): { detail?: string; label:
       return { label: event.kind.replace(/_/g, ' '), detail: detail || undefined }
     }
   }
+}
+
+/**
+ * "Where is this card, really?" — age vs current attempt, the last signal WITH
+ * its origin, what it waits on, and the operator's next action.
+ *
+ * Regras que a tela nao pode quebrar (o calculo mora em ./activity):
+ *  - heartbeat prova processo vivo, NAO progresso: os dois sao ditos separados;
+ *  - sem telemetria a tela diz DESCONHECIDO, nunca "parado" nem "0%";
+ *  - motivo de recusa do preflight aparece literal, sem reinterpretacao.
+ * Detalhe fica sob demanda (Tip) para a caixa nao virar paredao de texto.
+ */
+function ActivityPanel({ activity, k }: { activity: CardActivity; k: KanbanText }) {
+  const age = formatElapsed(activity.ageSeconds)
+  const attempt = formatElapsed(activity.attemptSeconds)
+  const beat = formatElapsed(activity.heartbeatSeconds)
+
+  const waitText = (waiting: NonNullable<CardActivity['waiting']>): string => {
+    switch (waiting.kind) {
+      case 'dependency':
+        return waiting.ref ? k.waitDependency(shortId(waiting.ref)) : k.waitDependencyBare
+
+      case 'input':
+        return k.waitInput
+
+      case 'rate_limit':
+        return k.waitRateLimit
+
+      case 'refused':
+        return k.waitRefused
+
+      case 'review':
+        return waiting.ref ? k.waitReview(waiting.ref) : k.waitReviewBare
+
+      case 'unassigned':
+        return k.waitUnassigned
+    }
+  }
+
+  const ACTION_TEXT: Record<NonNullable<CardActivity['nextAction']>, string> = {
+    answer: k.actAnswer,
+    assign: k.actAssign,
+    fix_route: k.actFixRoute,
+    reclaim: k.actReclaim,
+    review: k.actReview,
+    wait_parent: k.actWaitParent,
+    wait_quota: k.actWaitQuota
+  }
+
+  const SOURCE_TEXT = {
+    comment: k.signalFromComment,
+    event: k.signalFromEvent,
+    run: k.signalFromRun
+  } as const
+
+  // Vivo sem reportar nada e uma frase DIFERENTE de "nao sei se esta vivo".
+  const aliveButSilent = activity.liveness === 'beating' && !activity.progressKnown
+
+  return (
+    <Section label={k.progress}>
+      <div className="flex flex-col gap-2 rounded-md bg-(--ui-bg-quaternary)/40 p-2.5 text-[0.71rem]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {age && (
+            <span className="text-(--ui-text-tertiary)">
+              <span className="text-(--ui-text-quaternary)">{k.cardAge}</span> {age}
+            </span>
+          )}
+          {attempt && (
+            <span className="text-(--ui-text-tertiary)">
+              <span className="text-(--ui-text-quaternary)">{k.attempt}</span> {attempt}
+              {activity.attemptNumber && activity.attemptNumber > 1 ? (
+                <span className="ml-1 text-(--ui-text-quaternary)">
+                  ({k.attemptNth(activity.attemptNumber)})
+                </span>
+              ) : null}
+            </span>
+          )}
+          {activity.childProgress && (
+            <span className="inline-flex items-center gap-1 text-(--ui-text-tertiary)">
+              <Codicon name="checklist" size="0.7rem" />
+              {activity.childProgress.done}/{activity.childProgress.total}
+            </span>
+          )}
+          {activity.liveness && (
+            <Tip label={activity.heartbeatSeconds == null ? k.neverBeat : k.lastBeat(beat ?? '')}>
+              <span
+                className={cn(
+                  'inline-flex cursor-help items-center gap-1',
+                  activity.liveness === 'beating' ? 'text-(--ui-text-quaternary)' : 'text-amber-500'
+                )}
+              >
+                <Codicon name="pulse" size="0.7rem" />
+                {activity.liveness === 'beating' ? (beat ?? '') : k.noHeartbeat}
+              </span>
+            </Tip>
+          )}
+        </div>
+
+        {activity.lastSignal ? (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-baseline gap-2">
+              <span className="text-(--ui-text-quaternary)">{k.lastSignal}</span>
+              <span className="min-w-0 truncate font-medium text-(--ui-text-secondary)">
+                {activity.lastSignal.kind.replace(/_/g, ' ')}
+              </span>
+              {/* Origem nomeada: o leitor consegue ir conferir onde isso foi lido. */}
+              <button className="shrink-0 underline text-(--ui-text-secondary)" onClick={() => {
+                const signal = activity.lastSignal!
+                const target = document.getElementById(`kanban-${signal.source}-${signal.id}`)
+                target?.scrollIntoView({ block: 'nearest' })
+                target?.focus({ preventScroll: true })
+              }} type="button">
+                {SOURCE_TEXT[activity.lastSignal.source]}
+              </button>
+              <span className="ml-auto shrink-0 text-(--ui-text-quaternary)">{ago(activity.lastSignal.at)}</span>
+            </div>
+            {activity.lastSignal.detail && (
+              <p className="line-clamp-2 whitespace-pre-wrap text-(--ui-text-tertiary)">
+                {activity.lastSignal.detail}
+              </p>
+            )}
+          </div>
+        ) : (
+          <Tip label={aliveButSilent ? k.heartbeatOnlyHelp : k.progressUnknownHelp}>
+            <span className="inline-flex w-fit cursor-help items-center gap-1 text-(--ui-text-quaternary)">
+              <Codicon name="question" size="0.7rem" />
+              {aliveButSilent ? k.heartbeatOnly : k.progressUnknown}
+            </span>
+          </Tip>
+        )}
+
+        {activity.liveness && !activity.waiting && (
+          <p className="text-(--ui-text-tertiary)">{k.operationUnknown}</p>
+        )}
+        {activity.waiting && (
+          <div className="flex flex-col gap-0.5 border-t border-(--ui-border-secondary) pt-2">
+            <div className="flex items-baseline gap-2">
+              <span className="text-(--ui-text-quaternary)">{k.waitingLabel}</span>
+              <span className="min-w-0 font-medium text-(--ui-text-secondary)">{waitText(activity.waiting)}</span>
+            </div>
+            {'detail' in activity.waiting && activity.waiting.detail && (
+              // Texto do preflight/bloqueio copiado verbatim — reescrever aqui
+              // criaria uma segunda verdade divergindo da primeira em silencio.
+              <p className="whitespace-pre-wrap text-(--ui-text-tertiary)">{activity.waiting.detail}</p>
+            )}
+          </div>
+        )}
+
+        {activity.nextAction && (
+          <div className="flex items-baseline gap-2">
+            <span className="shrink-0 text-(--ui-text-quaternary)">{k.nextActionLabel}</span>
+            <span className="min-w-0 text-(--ui-text-secondary)">{ACTION_TEXT[activity.nextAction]}</span>
+          </div>
+        )}
+      </div>
+    </Section>
+  )
 }
 
 function MetaRow({ children, label }: { children: ReactNode; label: string }) {
@@ -565,6 +723,46 @@ export function TaskDrawer({
   const running = task?.status === 'running'
   const defaultAssignee = useDefaultAssignee()
 
+  // Um tick proprio: as idades sao derivadas de `Date.now()`, entao sem ele o
+  // painel so avancaria quando uma query invalidasse. 5s e a mesma cadencia do
+  // relogio da tentativa no card (ui.tsx), e o menor termo exibido e o segundo.
+  const [, forceClock] = useState(0)
+
+  useEffect(() => {
+    const timer = window.setInterval(() => forceClock(n => n + 1), 5_000)
+
+    return () => window.clearInterval(timer)
+  }, [])
+
+  // Falha de leitura do painel NAO pode derrubar o drawer: sem isto, um payload
+  // de evento inesperado apagaria descricao, comentarios e acoes de recuperacao
+  // — exatamente a tela que o operador usa para consertar o card quebrado.
+  //
+  // Mas engolir a falha em silencio seria a outra mentira: um painel que
+  // simplesmente SOME e indistinguivel de um card sem nada a mostrar. Erro e
+  // ausencia sao afirmacoes diferentes, entao a tela diz qual das duas e.
+  let activity: CardActivity | null = null
+  let activityFailed = false
+
+  try {
+    activity = task
+      ? cardActivity({
+          comments: detail?.comments ?? [],
+          defaultAssignee,
+          events: detail?.events ?? [],
+          // Segundos, nao ms: todos os carimbos do board (`created_at`,
+          // `started_at`, `last_heartbeat_at`) sao epoch em SEGUNDOS. Misturar
+          // as duas escalas aqui produziria idades absurdas em vez de erro.
+          now: Math.floor(Date.now() / 1000),
+          runs: detail?.runs ?? [],
+          task
+        })
+      : null
+  } catch {
+    activity = null
+    activityFailed = true
+  }
+
   const { data: log } = useQuery({
     enabled: !!id,
     queryFn: () => fetchLog(id!),
@@ -787,6 +985,16 @@ export function TaskDrawer({
               {running && task.worker_pid ? <MetaRow label={k.metaWorkerPid}>{task.worker_pid}</MetaRow> : null}
             </div>
 
+            {activity && <ActivityPanel activity={activity} k={k} />}
+            {activityFailed && (
+              <Section label={k.progress}>
+                <div className="flex items-center gap-1.5 rounded-md bg-(--ui-bg-quaternary)/40 p-2.5 text-[0.71rem] text-amber-500">
+                  <Codicon name="warning" size="0.7rem" />
+                  {k.activityUnavailable}
+                </div>
+              </Section>
+            )}
+
             {task.status === 'ready' && !task.assignee && !defaultAssignee && (
               <Callout title={k.readyUnassignedTitle} tone={SEVERITY_TONE.warning}>
                 <p className="text-[0.71rem] leading-relaxed text-(--ui-text-secondary)">{k.readyUnassignedBody}</p>
@@ -852,7 +1060,7 @@ export function TaskDrawer({
               {detail.comments.length > 0 && (
                 <ul className="flex flex-col gap-2">
                   {detail.comments.map(comment => (
-                    <li className="text-[0.75rem]" key={comment.id}>
+                    <li className="text-[0.75rem]" id={`kanban-comment-${comment.id}`} key={comment.id} tabIndex={-1}>
                       <span className="font-medium text-(--ui-text-secondary)">{comment.author}</span>
                       <span className="ml-2 text-[0.625rem] text-(--ui-text-quaternary)">
                         {ago(comment.created_at)}
@@ -878,7 +1086,7 @@ export function TaskDrawer({
                       const { detail: extra, label } = eventText(event, k)
 
                       return (
-                        <li className="flex items-baseline gap-2 text-[0.6875rem]" key={event.id}>
+                        <li className="flex items-baseline gap-2 text-[0.6875rem]" id={`kanban-event-${event.id}`} key={event.id} tabIndex={-1}>
                           <span className="shrink-0 text-(--ui-text-secondary)">{label}</span>
                           {extra && (
                             <span
@@ -905,7 +1113,7 @@ export function TaskDrawer({
                       const failed = ['crashed', 'failed', 'timed_out', 'gave_up'].includes(run.outcome ?? run.status)
 
                       return (
-                        <li className="flex flex-col gap-0.5 text-[0.71rem]" key={run.id}>
+                        <li className="flex flex-col gap-0.5 text-[0.71rem]" id={`kanban-run-${run.id}`} key={run.id} tabIndex={-1}>
                           <div className="flex items-center gap-2">
                             <Badge size="xs" variant={failed ? 'destructive' : 'muted'}>
                               {run.outcome ?? run.status}

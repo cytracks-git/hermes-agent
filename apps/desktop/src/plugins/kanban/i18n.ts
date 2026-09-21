@@ -123,6 +123,46 @@ type KanbanMessages = {
   metaCreatedBy: string
   metaCreated: string
   metaWorkerPid: string
+  // drawer — activity panel (age vs attempt, last signal, waiting, next action)
+  progress: string
+  /** Card age — how long the WORK has existed, across every attempt. */
+  cardAge: string
+  /** Current attempt only. Distinct from age on purpose: a 9-day-old card whose
+   *  worker restarted 3 minutes ago is not a card stuck for 9 days. */
+  attempt: string
+  attemptNth: (n: number) => string
+  lastSignal: string
+  /** Named origin of the signal, so a reader can go check it. */
+  signalFromEvent: string
+  signalFromRun: string
+  signalFromComment: string
+  /** No telemetry at all — NOT "no progress". The two are different claims. */
+  progressUnknown: string
+  progressUnknownHelp: string
+  heartbeatOnly: string
+  heartbeatOnlyHelp: string
+  lastBeat: (elapsed: string) => string
+  neverBeat: string
+  waitingLabel: string
+  operationUnknown: string
+  waitDependency: (ref: string) => string
+  waitDependencyBare: string
+  waitReview: (ref: string) => string
+  waitReviewBare: string
+  waitInput: string
+  waitRateLimit: string
+  waitRefused: string
+  waitUnassigned: string
+  nextActionLabel: string
+  actAnswer: string
+  actAssign: string
+  actFixRoute: string
+  actReclaim: string
+  actReview: string
+  actWaitParent: string
+  actWaitQuota: string
+  /** The panel could not be read — distinct from "nothing to show". */
+  activityUnavailable: string
   readyUnassignedTitle: string
   readyUnassignedBody: string
   diagnosticsN: (n: number) => string
@@ -341,6 +381,41 @@ export const en: KanbanMessages = {
   metaCreatedBy: 'Created by',
   metaCreated: 'Created',
   metaWorkerPid: 'Worker pid',
+  progress: 'Progress',
+  cardAge: 'Card age',
+  attempt: 'This attempt',
+  attemptNth: n => `attempt ${n}`,
+  lastSignal: 'Last signal',
+  signalFromEvent: 'from activity',
+  signalFromRun: 'from run history',
+  signalFromComment: 'from a comment',
+  progressUnknown: 'No progress reported',
+  progressUnknownHelp:
+    'Nothing has been reported for this card yet — that is unknown, not stalled. Workers report through run summaries, comments, and activity events.',
+  heartbeatOnly: 'Alive, no progress reported',
+  heartbeatOnlyHelp:
+    'The worker is sending heartbeats, which proves the process is alive but says nothing about the work. Ask for an update in the comments if you need one.',
+  lastBeat: elapsed => `last heartbeat ${elapsed} ago`,
+  neverBeat: 'no heartbeat yet',
+  waitingLabel: 'Waiting on',
+  operationUnknown: 'Current model or tool activity is unknown — not reported by this worker.',
+  waitDependency: ref => `a parent task (${ref})`,
+  waitDependencyBare: 'a parent task',
+  waitReview: ref => `review by ${ref}`,
+  waitReviewBare: 'review',
+  waitInput: 'an answer from you',
+  waitRateLimit: 'provider quota',
+  waitRefused: 'dispatch was refused',
+  waitUnassigned: 'an assignee',
+  nextActionLabel: 'Next action',
+  actAnswer: 'Answer in the comments, then unblock',
+  actAssign: 'Set an assignee, or configure a default in orchestration settings',
+  actFixRoute: 'Fix the route named above, then let the dispatcher retry',
+  actReclaim: 'Reclaim the task if the worker is really gone',
+  actReview: 'Review the handoff and approve or request changes',
+  actWaitParent: 'Nothing to do — it starts when the parent finishes',
+  actWaitQuota: 'Nothing to do — it retries when the quota window resets',
+  activityUnavailable: 'Activity could not be read',
   readyUnassignedTitle: 'Ready, but unassigned — this card will never run.',
   readyUnassignedBody:
     'The dispatcher only claims Ready cards that have an assignee. Pick a profile in the Assignee field above (or set a default assignee in the orchestration settings) and it runs within a minute.',
@@ -554,6 +629,41 @@ const ja: KanbanMessages = {
   metaCreatedBy: '作成者',
   metaCreated: '作成',
   metaWorkerPid: 'ワーカー PID',
+  progress: '進捗',
+  cardAge: 'カードの経過時間',
+  attempt: '現在の試行',
+  attemptNth: n => `試行 ${n}`,
+  lastSignal: '最新のシグナル',
+  signalFromEvent: 'アクティビティより',
+  signalFromRun: '実行履歴より',
+  signalFromComment: 'コメントより',
+  progressUnknown: '進捗の報告なし',
+  progressUnknownHelp:
+    'このカードについてまだ何も報告されていません。停滞ではなく「不明」です。ワーカーは実行サマリー、コメント、アクティビティイベントで報告します。',
+  heartbeatOnly: '稼働中・進捗の報告なし',
+  heartbeatOnlyHelp:
+    'ワーカーはハートビートを送信しており、プロセスが生きていることは確かですが、作業内容については何も示しません。状況が必要ならコメントで尋ねてください。',
+  lastBeat: elapsed => `最終ハートビート ${elapsed}前`,
+  neverBeat: 'ハートビートなし',
+  waitingLabel: '待機中',
+  operationUnknown: '現在のモデルやツールの動作は不明です。ワーカーから報告されていません。',
+  waitDependency: ref => `親タスク（${ref}）`,
+  waitDependencyBare: '親タスク',
+  waitReview: ref => `${ref} によるレビュー`,
+  waitReviewBare: 'レビュー',
+  waitInput: 'あなたの回答',
+  waitRateLimit: 'プロバイダのクォータ',
+  waitRefused: 'ディスパッチが拒否されました',
+  waitUnassigned: '担当者',
+  nextActionLabel: '次のアクション',
+  actAnswer: 'コメントで回答し、ブロックを解除してください',
+  actAssign: '担当者を設定するか、オーケストレーション設定でデフォルトを構成してください',
+  actFixRoute: '上記のルートを修正すると、ディスパッチャが再試行します',
+  actReclaim: 'ワーカーが本当に消失している場合はタスクを再取得してください',
+  actReview: 'ハンドオフをレビューし、承認または変更を依頼してください',
+  actWaitParent: '対応不要 — 親タスクの完了後に開始します',
+  actWaitQuota: '対応不要 — クォータの枠が回復すると再試行します',
+  activityUnavailable: 'アクティビティを読み取れませんでした',
   readyUnassignedTitle: 'Ready ですが未割り当て — このカードは実行されません。',
   readyUnassignedBody:
     'ディスパッチャは担当のある Ready カードのみ取得します。上の担当フィールドでプロフィールを選ぶ（またはオーケストレーション設定でデフォルトの担当を設定する）と、1分以内に実行されます。',
@@ -766,6 +876,40 @@ const zh: KanbanMessages = {
   metaCreatedBy: '创建者',
   metaCreated: '创建于',
   metaWorkerPid: '工作单元 PID',
+  progress: '进度',
+  cardAge: '卡片存在时长',
+  attempt: '本次尝试',
+  attemptNth: n => `第 ${n} 次尝试`,
+  lastSignal: '最新信号',
+  signalFromEvent: '来自活动记录',
+  signalFromRun: '来自运行历史',
+  signalFromComment: '来自评论',
+  progressUnknown: '未报告进度',
+  progressUnknownHelp:
+    '这张卡片还没有任何报告——这是「未知」，不是「停滞」。工作单元通过运行摘要、评论和活动事件来报告进度。',
+  heartbeatOnly: '存活，但未报告进度',
+  heartbeatOnlyHelp: '工作单元在发送心跳，这只能证明进程存活，并不说明工作进展。需要了解情况请在评论中询问。',
+  lastBeat: elapsed => `最后心跳在 ${elapsed}前`,
+  neverBeat: '尚无心跳',
+  waitingLabel: '正在等待',
+  operationUnknown: '当前模型或工具活动未知，工作进程尚未报告。',
+  waitDependency: ref => `父任务（${ref}）`,
+  waitDependencyBare: '父任务',
+  waitReview: ref => `${ref} 的评审`,
+  waitReviewBare: '评审',
+  waitInput: '你的回复',
+  waitRateLimit: '供应商配额',
+  waitRefused: '调度被拒绝',
+  waitUnassigned: '指派对象',
+  nextActionLabel: '下一步',
+  actAnswer: '在评论中回复，然后解除阻塞',
+  actAssign: '设置指派对象，或在编排设置中配置默认指派',
+  actFixRoute: '修正上面指出的路由，调度器会自动重试',
+  actReclaim: '如果工作单元确实已消失，可重新领取该任务',
+  actReview: '评审交接内容，批准或要求修改',
+  actWaitParent: '无需操作——父任务完成后即会开始',
+  actWaitQuota: '无需操作——配额窗口恢复后会重试',
+  activityUnavailable: '无法读取活动记录',
   readyUnassignedTitle: '就绪但未分配 — 这张卡片永远不会运行。',
   readyUnassignedBody:
     '调度器只领取有负责人的就绪卡片。在上面的负责人字段选择一个配置档（或在编排设置中设置默认负责人），它会在一分钟内运行。',
@@ -976,6 +1120,40 @@ const zhHant: KanbanMessages = {
   metaCreatedBy: '建立者',
   metaCreated: '建立於',
   metaWorkerPid: '工作單元 PID',
+  progress: '進度',
+  cardAge: '卡片存在時長',
+  attempt: '本次嘗試',
+  attemptNth: n => `第 ${n} 次嘗試`,
+  lastSignal: '最新訊號',
+  signalFromEvent: '來自活動紀錄',
+  signalFromRun: '來自執行歷史',
+  signalFromComment: '來自留言',
+  progressUnknown: '未回報進度',
+  progressUnknownHelp:
+    '這張卡片還沒有任何回報——這是「未知」，不是「停滯」。工作單元透過執行摘要、留言與活動事件回報進度。',
+  heartbeatOnly: '存活，但未回報進度',
+  heartbeatOnlyHelp: '工作單元正在送出心跳，這只能證明程序存活，並不說明工作進展。需要了解狀況請在留言中詢問。',
+  lastBeat: elapsed => `最後心跳在 ${elapsed}前`,
+  neverBeat: '尚無心跳',
+  waitingLabel: '正在等待',
+  operationUnknown: '当前模型或工具活动未知，工作进程尚未报告。',
+  waitDependency: ref => `父任務（${ref}）`,
+  waitDependencyBare: '父任務',
+  waitReview: ref => `${ref} 的審查`,
+  waitReviewBare: '審查',
+  waitInput: '你的回覆',
+  waitRateLimit: '供應商配額',
+  waitRefused: '派工遭拒',
+  waitUnassigned: '指派對象',
+  nextActionLabel: '下一步',
+  actAnswer: '在留言中回覆，然後解除封鎖',
+  actAssign: '設定指派對象，或在編排設定中配置預設指派',
+  actFixRoute: '修正上面指出的路由，排程器會自動重試',
+  actReclaim: '若工作單元確實已消失，可重新領取該任務',
+  actReview: '審查交接內容，核准或要求修改',
+  actWaitParent: '無需動作——父任務完成後即會開始',
+  actWaitQuota: '無需動作——配額視窗恢復後會重試',
+  activityUnavailable: '無法讀取活動紀錄',
   readyUnassignedTitle: '就緒但未指派 — 這張卡片永遠不會執行。',
   readyUnassignedBody:
     '排程器只領取有負責人的就緒卡片。在上方的負責人欄位選擇一個設定檔（或在編排設定中設定預設負責人），它會在一分鐘內執行。',
