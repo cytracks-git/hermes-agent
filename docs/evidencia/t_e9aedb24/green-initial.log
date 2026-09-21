@@ -1,0 +1,71 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: not a git repository: /Users/farantes/.hermes/hermes-agent/.git/worktrees/hermes-desktop-launch-boundary
+▶ launching test runner
+Discovered 3 test files (~89 tests) under ['tests/plugins/test_kanban_launch_identity.py', 'tests/plugins/test_kanban_dashboard_plugin.py', 'tests/hermes_cli/test_gui_command.py']; running with -j 3
+[ 51.7% |    46/~89 | ✓48 | ✗ 0] ✓ tests/hermes_cli/test_gui_command.py (48✓ 9s, 2.3s)
+[ 53.9% |    48/~89 | ✓53 | ✗ 0] ✓ tests/plugins/test_kanban_launch_identity.py (5✓, 2.7s)
+[100.0% |    89/~89 | ✓93 | ✗ 1] ✗ tests/plugins/test_kanban_dashboard_plugin.py (40✓ 1✗, 9.8s)
+
+  ╔╍ Failed: tests/plugins/test_kanban_dashboard_plugin.py ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+  ║             if solved_result.errors:
+  ║                 errors.extend(solved_result.errors)
+  ║                 continue
+  ║             if sub_dependant.use_cache and sub_dependant.cache_key in dependency_cache:
+  ║                 solved = dependency_cache[sub_dependant.cache_key]
+  ║             elif (
+  ║                 use_sub_dependant.is_gen_callable or use_sub_dependant.is_async_gen_callable
+  ║             ):
+  ║                 use_astack = request_astack
+  ║                 if sub_dependant.scope == "function":
+  ║                     use_astack = function_astack
+  ║                 solved = await _solve_generator(
+  ║                     dependant=use_sub_dependant,
+  ║                     stack=use_astack,
+  ║                     sub_values=solved_result.values,
+  ║                 )
+  ║             elif use_sub_dependant.is_coroutine_callable:
+  ║ >               solved = await call(**solved_result.values)
+  ║ E               TypeError: _require_write_identity() missing 1 required positional argument: 'request'
+  ║ 
+  ║ /usr/local/lib/python3.13/site-packages/fastapi/dependencies/utils.py:645: TypeError
+  ║ =============================== warnings summary ===============================
+  ║ ../usr/local/lib/python3.13/site-packages/starlette/testclient.py:45
+  ║   /usr/local/lib/python3.13/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+  ║     _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+  ║ 
+  ║ -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+  ║ =========================== short test summary info ============================
+  ║ FAILED tests/plugins/test_kanban_dashboard_plugin.py::test_ws_events_rejects_when_token_required
+  ║ 1 failed, 40 passed, 1 warning in 9.24s
+  ║
+  ║  Repro: python -m pytest tests/plugins/test_kanban_dashboard_plugin.py -q -p no:cacheprovider
+  ╚╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+
+=== Summary: 3 files, 93 tests passed, 1 failed, 9 skipped (100% complete) in 9.8s (3 workers) ===
+
+  note: macos_only tests (in 1 file) were SKIPPED on this host (linux); they run on the tests-os CI lane (macos-latest).
+  note: windows_only tests (in 1 file) were SKIPPED on this host (linux); they run on the tests-os CI lane (windows-latest).
+Traceback (most recent call last):
+  File "/repo/scripts/run_tests_parallel.py", line 1415, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/repo/scripts/run_tests_parallel.py", line 1343, in main
+    _save_durations(clean_times, repo_root)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/scripts/run_tests_parallel.py", line 749, in _save_durations
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/pathlib/_local.py", line 555, in write_text
+    return PathBase.write_text(self, data, encoding, errors, newline)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/pathlib/_abc.py", line 651, in write_text
+    with self.open(mode='w', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/pathlib/_local.py", line 537, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 30] Read-only file system: '/repo/test_durations.json'

@@ -1257,6 +1257,10 @@
 
     return h(ErrorBoundary, null,
       h("div", { className: "hermes-kanban flex flex-col gap-4" },
+        boardData.write_access && !boardData.write_access.allowed
+          ? h("div", { role: "alert", className: "text-sm border rounded-md p-3" },
+            h("strong", null, "Read-only launch. "), boardData.write_access.reason)
+          : null,
         h(BoardSwitcher, {
           board: board,
           boardList: boardList,

@@ -1,0 +1,369 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: not a git repository: /Users/farantes/.hermes/hermes-agent/.git/worktrees/hermes-desktop-launch-boundary
+▶ launching test runner
+Discovered 2 test files (~3 tests) under ['tests/plugins/test_kanban_launch_identity.py', 'tests/hermes_cli/test_launch_identity_live.py']; running with -j 28
+[ 66.7% |     2/~3 | ✓1 | ✗4] ✗ tests/plugins/test_kanban_launch_identity.py (1✓ 4✗, 3.0s)
+
+  ╔╍ Failed: tests/plugins/test_kanban_launch_identity.py ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+  ║ >           assert board.status_code == 200, board.text
+  ║ E           AssertionError: {"detail":"Kanban is read-only for this launch: the backend inherited an agent's delegated-worker restrictions. Reading the board is still available. To make changes, wait for active work to finish, then quit this Desktop/backend and reopen Hermes from the operating system or a normal user terminal, not from an agent tool. Refreshing the page or switching profiles does not change the launch identity."}
+  ║ E           assert 403 == 200
+  ║ E            +  where 403 = <Response [403 Forbidden]>.status_code
+  ║ 
+  ║ tests/plugins/test_kanban_launch_identity.py:61: AssertionError
+  ║ =============================== warnings summary ===============================
+  ║ ../usr/local/lib/python3.13/site-packages/starlette/testclient.py:45
+  ║   /usr/local/lib/python3.13/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+  ║     _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+  ║ 
+  ║ ../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475
+  ║   /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/nodeids: [Errno 30] Read-only file system: '/repo/pytest-cache-files-jxiplp22'
+  ║     config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+  ║ 
+  ║ ../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429
+  ║   /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/lastfailed: [Errno 30] Read-only file system: '/repo/pytest-cache-files-adl35_wg'
+  ║     config.cache.set("cache/lastfailed", self.lastfailed)
+  ║ 
+  ║ ../usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51
+  ║   /usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/stepwise: [Errno 30] Read-only file system: '/repo/pytest-cache-files-p5qvr9j5'
+  ║     session.config.cache.set(STEPWISE_CACHE_DIR, [])
+  ║ 
+  ║ -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+  ║ =========================== short test summary info ============================
+  ║ FAILED tests/plugins/test_kanban_launch_identity.py::test_restricted_launch_is_readable_but_never_promoted[inherited]
+  ║ FAILED tests/plugins/test_kanban_launch_identity.py::test_restricted_launch_is_readable_but_never_promoted[legacy]
+  ║ FAILED tests/plugins/test_kanban_launch_identity.py::test_restricted_launch_is_readable_but_never_promoted[in_process]
+  ║ FAILED tests/plugins/test_kanban_launch_identity.py::test_restricted_launch_is_readable_but_never_promoted[profile]
+  ║ =================== 4 failed, 1 passed, 4 warnings in 2.44s ====================
+  ║
+  ║  Repro: python -m pytest tests/plugins/test_kanban_launch_identity.py
+  ╚╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+[100.0% |     3/~3 | ✓1 | ✗5] ✗ tests/hermes_cli/test_launch_identity_live.py (1✗, 6.3s)
+
+  ╔╍ Failed: tests/hermes_cli/test_launch_identity_live.py ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+  ║                     raise AssertionError("Backend did not become ready:\n" + "".join(lines))
+  ║                 assert port, "".join(lines)
+  ║                 with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=10,
+  ║                                   headers={"X-Hermes-Session-Token": "local-launch-test"}) as client:
+  ║                     board = client.get("/api/plugins/kanban/board")
+  ║ >                   assert board.status_code == 200, board.text
+  ║ E                   AssertionError: {"detail":"Kanban is read-only for this launch: the backend inherited an agent's delegated-worker restrictions. Reading the board is still available. To make changes, wait for active work to finish, then quit this Desktop/backend and reopen Hermes from the operating system or a normal user terminal, not from an agent tool. Refreshing the page or switching profiles does not change the launch identity."}
+  ║ E                   assert 403 == 200
+  ║ E                    +  where 403 = <Response [403 Forbidden]>.status_code
+  ║ 
+  ║ tests/hermes_cli/test_launch_identity_live.py:65: AssertionError
+  ║ ------------------------------ Captured log call -------------------------------
+  ║ WARNING  hermes_state:hermes_state_wal.py:559 kanban.db (kanban.db): linked SQLite 3.46.1 (interpreter /usr/local/bin/python) is vulnerable to the WAL-reset corruption bug (https://sqlite.org/wal.html#walresetbug) — using journal_mode=DELETE instead of enabling WAL. Upgrade to SQLite 3.51.3+ (or backports 3.50.7 / 3.44.6); Hermes-managed installs can repair the embedded runtime with `hermes update`. See `hermes doctor`. This warning fires once per process per database.
+  ║ =============================== warnings summary ===============================
+  ║ ../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475
+  ║   /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/nodeids: [Errno 30] Read-only file system: '/repo/pytest-cache-files-f573j3eo'
+  ║     config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+  ║ 
+  ║ ../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429
+  ║   /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/lastfailed: [Errno 30] Read-only file system: '/repo/pytest-cache-files-pbvpi6rr'
+  ║     config.cache.set("cache/lastfailed", self.lastfailed)
+  ║ 
+  ║ ../usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51
+  ║   /usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/stepwise: [Errno 30] Read-only file system: '/repo/pytest-cache-files-ht21r_ss'
+  ║     session.config.cache.set(STEPWISE_CACHE_DIR, [])
+  ║ 
+  ║ -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+  ║ =========================== short test summary info ============================
+  ║ FAILED tests/hermes_cli/test_launch_identity_live.py::test_serve_launch_identity_and_independent_recovery
+  ║ ======================== 1 failed, 3 warnings in 5.74s =========================
+  ║
+  ║  Repro: python -m pytest tests/hermes_cli/test_launch_identity_live.py
+  ╚╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+
+=== Summary: 2 files, 1 tests passed, 5 failed (100% complete) in 6.3s (28 workers) ===
+
+=== Per-file subprocess time distribution ===
+  Files:   2
+  Total subprocess CPU-wall: 9.3s  (runner wall: 6.3s, parallelism: 28x)
+  P50: 6.34s  P90: 6.34s  P95: 6.34s  P99: 6.34s  Max: 6.34s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+      6.34s  tests/hermes_cli/test_launch_identity_live.py
+      2.97s  tests/plugins/test_kanban_launch_identity.py
+
+=== Failure output ===
+
+--- tests/plugins/test_kanban_launch_identity.py ---
+/usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.13.15, pytest-8.3.4, pluggy-1.6.0
+rootdir: /repo
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, timeout-2.4.0, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 5 items
+
+tests/plugins/test_kanban_launch_identity.py FFFF.                       [100%]
+
+=================================== FAILURES ===================================
+_______ test_restricted_launch_is_readable_but_never_promoted[inherited] _______
+
+board_client = (PosixPath('/tmp/hermes-pytest-tmproot-cadddbzb/pytest-of-unknown/pytest-0/test_restricted_launch_is_read0/.hermes'), <starlette.testclient.TestClient object at 0xffff945cc440>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffff9537de00>
+identity = 'inherited'
+
+    @pytest.mark.parametrize("identity", ["inherited", "legacy", "in_process", "profile"])
+    def test_restricted_launch_is_readable_but_never_promoted(board_client, monkeypatch, identity):
+        home, client = board_client
+        with connect_closing() as conn:
+            task = kb.create_task(conn, title="Restricted launch", initial_status="blocked")
+            before = kb.list_events(conn, task)
+        if identity == "profile":
+            profile = home / "profiles" / "writer"
+            profile.mkdir(parents=True)
+            monkeypatch.setenv("HERMES_HOME", str(profile))
+        marker = "1" if identity == "legacy" else str(home)
+        if identity != "in_process":
+            monkeypatch.setenv(DELEGATED_CHILD_ENV_MARKER, marker)
+        context = delegated_child_context() if identity == "in_process" else nullcontext()
+        api = "/api/plugins/kanban"
+        with context:
+            response = client.patch(f"{api}/tasks/{task}", json={"status": "ready"})
+            assert response.status_code == 403, response.text
+            assert "operating system" in response.json()["detail"]
+            assert "agent" in response.json()["detail"]
+            board = client.get(f"{api}/board")
+>           assert board.status_code == 200, board.text
+E           AssertionError: {"detail":"Kanban is read-only for this launch: the backend inherited an agent's delegated-worker restrictions. Reading the board is still available. To make changes, wait for active work to finish, then quit this Desktop/backend and reopen Hermes from the operating system or a normal user terminal, not from an agent tool. Refreshing the page or switching profiles does not change the launch identity."}
+E           assert 403 == 200
+E            +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests/plugins/test_kanban_launch_identity.py:61: AssertionError
+------------------------------ Captured log setup ------------------------------
+WARNING  hermes_state:hermes_state_wal.py:559 kanban.db (kanban.db): linked SQLite 3.46.1 (interpreter /usr/local/bin/python) is vulnerable to the WAL-reset corruption bug (https://sqlite.org/wal.html#walresetbug) — using journal_mode=DELETE instead of enabling WAL. Upgrade to SQLite 3.51.3+ (or backports 3.50.7 / 3.44.6); Hermes-managed installs can repair the embedded runtime with `hermes update`. See `hermes doctor`. This warning fires once per process per database.
+________ test_restricted_launch_is_readable_but_never_promoted[legacy] _________
+
+board_client = (PosixPath('/tmp/hermes-pytest-tmproot-cadddbzb/pytest-of-unknown/pytest-0/test_restricted_launch_is_read1/.hermes'), <starlette.testclient.TestClient object at 0xffff93a6d090>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffff952a9ba0>
+identity = 'legacy'
+
+    @pytest.mark.parametrize("identity", ["inherited", "legacy", "in_process", "profile"])
+    def test_restricted_launch_is_readable_but_never_promoted(board_client, monkeypatch, identity):
+        home, client = board_client
+        with connect_closing() as conn:
+            task = kb.create_task(conn, title="Restricted launch", initial_status="blocked")
+            before = kb.list_events(conn, task)
+        if identity == "profile":
+            profile = home / "profiles" / "writer"
+            profile.mkdir(parents=True)
+            monkeypatch.setenv("HERMES_HOME", str(profile))
+        marker = "1" if identity == "legacy" else str(home)
+        if identity != "in_process":
+            monkeypatch.setenv(DELEGATED_CHILD_ENV_MARKER, marker)
+        context = delegated_child_context() if identity == "in_process" else nullcontext()
+        api = "/api/plugins/kanban"
+        with context:
+            response = client.patch(f"{api}/tasks/{task}", json={"status": "ready"})
+            assert response.status_code == 403, response.text
+            assert "operating system" in response.json()["detail"]
+            assert "agent" in response.json()["detail"]
+            board = client.get(f"{api}/board")
+>           assert board.status_code == 200, board.text
+E           AssertionError: {"detail":"Kanban is read-only for this launch: the backend inherited an agent's delegated-worker restrictions. Reading the board is still available. To make changes, wait for active work to finish, then quit this Desktop/backend and reopen Hermes from the operating system or a normal user terminal, not from an agent tool. Refreshing the page or switching profiles does not change the launch identity."}
+E           assert 403 == 200
+E            +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests/plugins/test_kanban_launch_identity.py:61: AssertionError
+______ test_restricted_launch_is_readable_but_never_promoted[in_process] _______
+
+board_client = (PosixPath('/tmp/hermes-pytest-tmproot-cadddbzb/pytest-of-unknown/pytest-0/test_restricted_launch_is_read2/.hermes'), <starlette.testclient.TestClient object at 0xffff9392f9d0>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffff93a5ef90>
+identity = 'in_process'
+
+    @pytest.mark.parametrize("identity", ["inherited", "legacy", "in_process", "profile"])
+    def test_restricted_launch_is_readable_but_never_promoted(board_client, monkeypatch, identity):
+        home, client = board_client
+        with connect_closing() as conn:
+            task = kb.create_task(conn, title="Restricted launch", initial_status="blocked")
+            before = kb.list_events(conn, task)
+        if identity == "profile":
+            profile = home / "profiles" / "writer"
+            profile.mkdir(parents=True)
+            monkeypatch.setenv("HERMES_HOME", str(profile))
+        marker = "1" if identity == "legacy" else str(home)
+        if identity != "in_process":
+            monkeypatch.setenv(DELEGATED_CHILD_ENV_MARKER, marker)
+        context = delegated_child_context() if identity == "in_process" else nullcontext()
+        api = "/api/plugins/kanban"
+        with context:
+            response = client.patch(f"{api}/tasks/{task}", json={"status": "ready"})
+            assert response.status_code == 403, response.text
+            assert "operating system" in response.json()["detail"]
+            assert "agent" in response.json()["detail"]
+            board = client.get(f"{api}/board")
+>           assert board.status_code == 200, board.text
+E           AssertionError: {"detail":"Kanban is read-only for this launch: the backend inherited an agent's delegated-worker restrictions. Reading the board is still available. To make changes, wait for active work to finish, then quit this Desktop/backend and reopen Hermes from the operating system or a normal user terminal, not from an agent tool. Refreshing the page or switching profiles does not change the launch identity."}
+E           assert 403 == 200
+E            +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests/plugins/test_kanban_launch_identity.py:61: AssertionError
+________ test_restricted_launch_is_readable_but_never_promoted[profile] ________
+
+board_client = (PosixPath('/tmp/hermes-pytest-tmproot-cadddbzb/pytest-of-unknown/pytest-0/test_restricted_launch_is_read3/.hermes'), <starlette.testclient.TestClient object at 0xffff936c68b0>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffff938c1f20>
+identity = 'profile'
+
+    @pytest.mark.parametrize("identity", ["inherited", "legacy", "in_process", "profile"])
+    def test_restricted_launch_is_readable_but_never_promoted(board_client, monkeypatch, identity):
+        home, client = board_client
+        with connect_closing() as conn:
+            task = kb.create_task(conn, title="Restricted launch", initial_status="blocked")
+            before = kb.list_events(conn, task)
+        if identity == "profile":
+            profile = home / "profiles" / "writer"
+            profile.mkdir(parents=True)
+            monkeypatch.setenv("HERMES_HOME", str(profile))
+        marker = "1" if identity == "legacy" else str(home)
+        if identity != "in_process":
+            monkeypatch.setenv(DELEGATED_CHILD_ENV_MARKER, marker)
+        context = delegated_child_context() if identity == "in_process" else nullcontext()
+        api = "/api/plugins/kanban"
+        with context:
+            response = client.patch(f"{api}/tasks/{task}", json={"status": "ready"})
+            assert response.status_code == 403, response.text
+            assert "operating system" in response.json()["detail"]
+            assert "agent" in response.json()["detail"]
+            board = client.get(f"{api}/board")
+>           assert board.status_code == 200, board.text
+E           AssertionError: {"detail":"Kanban is read-only for this launch: the backend inherited an agent's delegated-worker restrictions. Reading the board is still available. To make changes, wait for active work to finish, then quit this Desktop/backend and reopen Hermes from the operating system or a normal user terminal, not from an agent tool. Refreshing the page or switching profiles does not change the launch identity."}
+E           assert 403 == 200
+E            +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests/plugins/test_kanban_launch_identity.py:61: AssertionError
+=============================== warnings summary ===============================
+../usr/local/lib/python3.13/site-packages/starlette/testclient.py:45
+  /usr/local/lib/python3.13/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475
+  /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/nodeids: [Errno 30] Read-only file system: '/repo/pytest-cache-files-jxiplp22'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429
+  /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/lastfailed: [Errno 30] Read-only file system: '/repo/pytest-cache-files-adl35_wg'
+    config.cache.set("cache/lastfailed", self.lastfailed)
+
+../usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51
+  /usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/stepwise: [Errno 30] Read-only file system: '/repo/pytest-cache-files-p5qvr9j5'
+    session.config.cache.set(STEPWISE_CACHE_DIR, [])
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/plugins/test_kanban_launch_identity.py::test_restricted_launch_is_readable_but_never_promoted[inherited]
+FAILED tests/plugins/test_kanban_launch_identity.py::test_restricted_launch_is_readable_but_never_promoted[legacy]
+FAILED tests/plugins/test_kanban_launch_identity.py::test_restricted_launch_is_readable_but_never_promoted[in_process]
+FAILED tests/plugins/test_kanban_launch_identity.py::test_restricted_launch_is_readable_but_never_promoted[profile]
+=================== 4 failed, 1 passed, 4 warnings in 2.44s ====================
+
+--- tests/hermes_cli/test_launch_identity_live.py ---
+/usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.13.15, pytest-8.3.4, pluggy-1.6.0
+rootdir: /repo
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, timeout-2.4.0, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+tests/hermes_cli/test_launch_identity_live.py F                          [100%]
+
+=================================== FAILURES ===================================
+_____________ test_serve_launch_identity_and_independent_recovery ______________
+
+tmp_path = PosixPath('/tmp/hermes-pytest-tmproot-domkwyjj/pytest-of-unknown/pytest-0/test_serve_launch_identity_and0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffffb156e520>
+
+    def test_serve_launch_identity_and_independent_recovery(tmp_path, monkeypatch):
+        root = tmp_path / ".hermes"
+        monkeypatch.setenv("HERMES_HOME", str(root))
+        monkeypatch.setenv("HERMES_KANBAN_HOME", str(root))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        kb.init_db()
+        with connect_closing() as conn:
+            task = kb.create_task(conn, title="Real launch lifecycle", initial_status="blocked")
+        # Simula um ambiente de login novo, não uma função que higieniza filhos.
+        login_env = {
+            "PATH": os.environ["PATH"], "HOME": str(tmp_path),
+            "HERMES_HOME": str(root), "HERMES_KANBAN_HOME": str(root),
+            "HERMES_SERVE_HEADLESS": "1", "PYTHONUNBUFFERED": "1",
+            "HERMES_DASHBOARD_SESSION_TOKEN": "local-launch-test",
+        }
+        profile = root / "profiles" / "writer"
+        profile.mkdir(parents=True)
+        repo = Path(__file__).resolve().parents[2]
+        # Default, perfil herdado e processo humano novo usam o MESMO SQLite.
+        for inherited, home in ((True, root), (True, profile), (False, root)):
+            env = {**login_env, "HERMES_HOME": str(home)}
+            if inherited:
+                env["HERMES_DELEGATED_CHILD_CONTEXT"] = str(root)
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "hermes_cli.main", "serve", "--port", "0"],
+                cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
+            lines = []
+            ready = queue.Queue()
+    
+            def drain():
+                for line in proc.stdout:
+                    lines.append(line)
+                    match = re.search(r"HERMES_BACKEND_READY port=(\d+)", line)
+                    if match:
+                        ready.put(int(match[1]))
+                ready.put(None)
+    
+            thread = threading.Thread(target=drain, daemon=True)
+            thread.start()
+            try:
+                try:
+                    port = ready.get(timeout=30)
+                except queue.Empty:
+                    raise AssertionError("Backend did not become ready:\n" + "".join(lines))
+                assert port, "".join(lines)
+                with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=10,
+                                  headers={"X-Hermes-Session-Token": "local-launch-test"}) as client:
+                    board = client.get("/api/plugins/kanban/board")
+>                   assert board.status_code == 200, board.text
+E                   AssertionError: {"detail":"Kanban is read-only for this launch: the backend inherited an agent's delegated-worker restrictions. Reading the board is still available. To make changes, wait for active work to finish, then quit this Desktop/backend and reopen Hermes from the operating system or a normal user terminal, not from an agent tool. Refreshing the page or switching profiles does not change the launch identity."}
+E                   assert 403 == 200
+E                    +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests/hermes_cli/test_launch_identity_live.py:65: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  hermes_state:hermes_state_wal.py:559 kanban.db (kanban.db): linked SQLite 3.46.1 (interpreter /usr/local/bin/python) is vulnerable to the WAL-reset corruption bug (https://sqlite.org/wal.html#walresetbug) — using journal_mode=DELETE instead of enabling WAL. Upgrade to SQLite 3.51.3+ (or backports 3.50.7 / 3.44.6); Hermes-managed installs can repair the embedded runtime with `hermes update`. See `hermes doctor`. This warning fires once per process per database.
+=============================== warnings summary ===============================
+../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475
+  /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/nodeids: [Errno 30] Read-only file system: '/repo/pytest-cache-files-f573j3eo'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429
+  /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/lastfailed: [Errno 30] Read-only file system: '/repo/pytest-cache-files-pbvpi6rr'
+    config.cache.set("cache/lastfailed", self.lastfailed)
+
+../usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51
+  /usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/stepwise: [Errno 30] Read-only file system: '/repo/pytest-cache-files-ht21r_ss'
+    session.config.cache.set(STEPWISE_CACHE_DIR, [])
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/hermes_cli/test_launch_identity_live.py::test_serve_launch_identity_and_independent_recovery
+======================== 1 failed, 3 warnings in 5.74s =========================
+
+=== 2 files with test failures (5 tests failed) ===
+  tests/plugins/test_kanban_launch_identity.py  (4 tests failed)
+  tests/hermes_cli/test_launch_identity_live.py  (1 test failed)

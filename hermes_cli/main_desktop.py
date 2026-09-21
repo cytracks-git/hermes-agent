@@ -1769,6 +1769,10 @@ def cmd_gui(args: argparse.Namespace):
     if deferred_entry is not None:
         env = deferred_entry.child_env(env)
         pass_fds = deferred_entry.pass_fds
+    # Avisar na origem sem apagar a restrição ou impedir leitura/uso remoto.
+    from hermes_cli.interactive_launch_context import warn_restricted_launch
+
+    warn_restricted_launch()
     with desktop_console_output(source_mode=source_mode) as streams:
         launch_result = subprocess.run(
             launch_command, cwd=desktop_dir, env=env, check=False, pass_fds=pass_fds, **streams
