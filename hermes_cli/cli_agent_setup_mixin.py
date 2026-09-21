@@ -223,6 +223,7 @@ class CLIAgentSetupMixin:
         _primary_exc = None
         runtime = None
         _model_at_entry = self.model
+        self._last_runtime_error = None
         try:
             # target_model: the ladder's model-keyed rungs (Zen/Go api_mode, Copilot/Nous
             # api_mode) must see the model this CLI will actually send, not config's `default`,
@@ -239,6 +240,7 @@ class CLIAgentSetupMixin:
                 _primary_exc = None
         if runtime is None:
             message = format_runtime_provider_error(_primary_exc) if _primary_exc else "Provider resolution failed."
+            self._last_runtime_error = _primary_exc
             if getattr(self, "tool_progress_mode", "full") == "off":
                 print(message, file=sys.stderr)  # quiet/stream-json: stdout is machine-readable
             else:
