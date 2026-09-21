@@ -12,6 +12,7 @@ import { bindApi, taskKey } from './api'
 import { TaskDrawer } from './drawer'
 import { en, KANBAN_LOCALES } from './i18n'
 import type { KanbanTaskDetail } from './types'
+import { arcState } from './ui'
 
 vi.mock('@/hermes', () => ({ setApiRequestProfile: vi.fn() }))
 
@@ -45,6 +46,8 @@ const legacyDetail: Omit<KanbanTaskDetail, 'attachments'> = {
 }
 
 let detail: object
+let taskFailure: null | string = null
+let taskLoading = false
 let client: QueryClient
 let disposeApi: () => void
 let disposeLocales: () => void
@@ -57,6 +60,14 @@ const rest = vi.fn(async (path: string, options?: PluginRestOptions): Promise<un
   }
 
   if (path === '/tasks/t_example') {
+    if (taskFailure) {
+      throw new Error(taskFailure)
+    }
+
+    if (taskLoading) {
+      return new Promise(() => {})
+    }
+
     return detail
   }
 
@@ -86,6 +97,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  taskFailure = null
+  taskLoading = false
   mockActivityThrows = false
   cleanup()
   client.clear()
@@ -158,7 +171,70 @@ describe('task attachment compatibility', () => {
  * — que o painel aparece, que idade e tentativa sao lidas como duas coisas
  * diferentes, e que uma falha de leitura nao leva o drawer junto.
  */
-describe('progress panel', () => {
+describe('TaskDrawer progress panel', () => {
+  it('does not label a pending response as unknown progress', () => {
+    taskLoading = true
+    openDrawer()
+    expect(screen.queryByText(en.progressUnknown)).toBeNull()
+    expect(screen.queryByText(en.attemptUnknown)).toBeNull()
+    expect(screen.queryByText(en.progress)).toBeNull()
+  })
+
+  it.each(['403: Forbidden', '500: Backend unavailable'])('keeps a failed read visible: %s', async failure => {
+    taskFailure = failure
+    openDrawer()
+    expect(await screen.findByText(failure)).toBeTruthy()
+    expect(screen.queryByText(en.progressUnknown)).toBeNull()
+    expect(screen.queryByText(en.heartbeatOnly)).toBeNull()
+  })
+
+  it('keeps unknown heartbeat out of the green board arc', () => {
+    expect(arcState({ ...legacyDetail.task, status: 'running' }, '')).toBe('unknown')
+    expect(arcState({ ...legacyDetail.task, status: 'running', last_heartbeat_at: now() }, '')).toBe('running')
+    expect(arcState({ ...legacyDetail.task, status: 'running', last_heartbeat_at: now() - 300 }, '')).toBe('stale')
+  })
+
+  it('updates the attempt across a minute and exposes the source to the keyboard', async () => {
+    const started = now() - 2 * 3600 - 7 * 60
+    detail = {
+      ...legacyDetail,
+      comments: [{ ...legacyDetail.comments[0], created_at: 1 }],
+      events: [],
+      task: { ...legacyDetail.task, status: 'running', created_at: now() - 3 * 86400, current_run_id: 2 },
+      runs: [{ id: 2, profile: 'executor', status: 'running', started_at: started }]
+    }
+    openDrawer()
+    expect(await screen.findByText('2h 7m', { exact: false })).toBeTruthy()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue((started + 2 * 3600 + 8 * 60) * 1000)
+
+    try {
+      await waitFor(() => expect(screen.getByText('2h 8m', { exact: false })).toBeTruthy(), { timeout: 7000 })
+    } finally {
+      clock.mockRestore()
+    }
+
+    const target = document.getElementById('kanban-comment-1')!
+    target.scrollIntoView = vi.fn()
+    fireEvent.click(screen.getByRole('button', { name: en.signalFromComment }))
+    expect(document.activeElement).toBe(target)
+    expect(target.scrollIntoView).toHaveBeenCalled()
+  }, 10_000)
+
+  it('shows missing attempt and heartbeat explicitly, without zero or green progress', async () => {
+    detail = {
+      ...legacyDetail,
+      task: { ...legacyDetail.task, status: 'running', started_at: now() - 86400 },
+      runs: [],
+      comments: []
+    }
+    openDrawer()
+    expect(await screen.findByText(en.attemptUnknown)).toBeTruthy()
+    expect(screen.getByText(en.heartbeatUnknown)).toBeTruthy()
+    expect(screen.getByText(en.progressUnknown)).toBeTruthy()
+    expect(screen.queryByText(en.heartbeatOnly)).toBeNull()
+    expect(screen.queryByText('0%')).toBeNull()
+  })
+
   const HOUR = 3600
   const now = () => Math.floor(Date.now() / 1000)
 
@@ -178,7 +254,7 @@ describe('progress panel', () => {
     expect(screen.getByText(en.attempt)).toBeTruthy()
     // 4h de idade e 3m de tentativa, lado a lado e distinguiveis.
     expect(screen.getByText('4h')).toBeTruthy()
-    expect(screen.getByText('3m')).toBeTruthy()
+    expect(screen.getByText(/3m/)).toBeTruthy()
   })
 
   it('says progress is UNKNOWN when nothing was reported, never "stalled"', async () => {

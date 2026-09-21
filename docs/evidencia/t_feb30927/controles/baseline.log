@@ -1,0 +1,17 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:37:20). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.10 /repo/apps/desktop
+
+ ✓ |ui| src/lib/time.test.ts (16 tests) 8ms
+ ✓ |ui| src/plugins/kanban/activity.test.ts (32 tests) 13ms
+ ✓ |ui| src/plugins/kanban/drawer.test.tsx (14 tests) 6078ms
+     ✓ keeps older task details usable without attachment controls ({})  375ms
+     ✓ updates the attempt across a minute and exposes the source to the keyboard  5108ms
+
+ Test Files  3 passed (3)
+      Tests  62 passed (62)
+   Start at  12:27:40
+   Duration  22.43s (transform 12.83s, setup 1.55s, import 26.77s, tests 6.10s, environment 5.13s)
+

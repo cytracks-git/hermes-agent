@@ -1,0 +1,7 @@
+
+/Users/farantes/.hermes/kanban/boards/atlas/workspaces/t_c7bee8cc/t_feb30927-impl/apps/desktop/src/plugins/kanban/drawer.test.tsx
+  206:20  warning  Unexpected use of 'document'  no-restricted-globals
+  209:12  warning  Unexpected use of 'document'  no-restricted-globals
+
+✖ 2 problems (0 errors, 2 warnings)
+

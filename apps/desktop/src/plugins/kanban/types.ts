@@ -22,6 +22,7 @@ export interface KanbanTask {
   /** Worker liveness (present on running cards) — drives the arc + run clock. */
   started_at?: null | number
   worker_pid?: null | number
+  current_run_id?: null | number
   last_heartbeat_at?: null | number
 }
 

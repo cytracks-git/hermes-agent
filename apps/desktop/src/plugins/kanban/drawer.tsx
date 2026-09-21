@@ -47,8 +47,8 @@ import {
   taskKey,
   uploadAttachment
 } from './api'
-import { ModelOverrideField, overridePatch } from './model-override'
 import { ApprovalPanel } from './approval-panel'
+import { ModelOverrideField, overridePatch } from './model-override'
 import {
   type Diagnostic,
   type DiagnosticAction,
@@ -237,13 +237,11 @@ function ActivityPanel({ activity, k }: { activity: CardActivity; k: KanbanText 
               <span className="text-(--ui-text-quaternary)">{k.cardAge}</span> {age}
             </span>
           )}
-          {attempt && (
+          {(attempt || activity.liveness) && (
             <span className="text-(--ui-text-tertiary)">
-              <span className="text-(--ui-text-quaternary)">{k.attempt}</span> {attempt}
+              <span className="text-(--ui-text-quaternary)">{k.attempt}</span> {attempt ?? k.attemptUnknown}
               {activity.attemptNumber && activity.attemptNumber > 1 ? (
-                <span className="ml-1 text-(--ui-text-quaternary)">
-                  ({k.attemptNth(activity.attemptNumber)})
-                </span>
+                <span className="ml-1 text-(--ui-text-quaternary)">({k.attemptNth(activity.attemptNumber)})</span>
               ) : null}
             </span>
           )}
@@ -262,7 +260,11 @@ function ActivityPanel({ activity, k }: { activity: CardActivity; k: KanbanText 
                 )}
               >
                 <Codicon name="pulse" size="0.7rem" />
-                {activity.liveness === 'beating' ? (beat ?? '') : k.noHeartbeat}
+                {activity.liveness === 'beating'
+                  ? (beat ?? '')
+                  : activity.liveness === 'unknown'
+                    ? k.heartbeatUnknown
+                    : k.noHeartbeat}
               </span>
             </Tip>
           )}
@@ -276,20 +278,22 @@ function ActivityPanel({ activity, k }: { activity: CardActivity; k: KanbanText 
                 {activity.lastSignal.kind.replace(/_/g, ' ')}
               </span>
               {/* Origem nomeada: o leitor consegue ir conferir onde isso foi lido. */}
-              <button className="shrink-0 underline text-(--ui-text-secondary)" onClick={() => {
-                const signal = activity.lastSignal!
-                const target = document.getElementById(`kanban-${signal.source}-${signal.id}`)
-                target?.scrollIntoView({ block: 'nearest' })
-                target?.focus({ preventScroll: true })
-              }} type="button">
+              <button
+                className="shrink-0 underline text-(--ui-text-secondary)"
+                onClick={() => {
+                  const signal = activity.lastSignal!
+                  const target = document.getElementById(`kanban-${signal.source}-${signal.id}`)
+                  target?.scrollIntoView({ block: 'nearest' })
+                  target?.focus({ preventScroll: true })
+                }}
+                type="button"
+              >
                 {SOURCE_TEXT[activity.lastSignal.source]}
               </button>
               <span className="ml-auto shrink-0 text-(--ui-text-quaternary)">{ago(activity.lastSignal.at)}</span>
             </div>
             {activity.lastSignal.detail && (
-              <p className="line-clamp-2 whitespace-pre-wrap text-(--ui-text-tertiary)">
-                {activity.lastSignal.detail}
-              </p>
+              <p className="line-clamp-2 whitespace-pre-wrap text-(--ui-text-tertiary)">{activity.lastSignal.detail}</p>
             )}
           </div>
         ) : (
@@ -301,9 +305,7 @@ function ActivityPanel({ activity, k }: { activity: CardActivity; k: KanbanText 
           </Tip>
         )}
 
-        {activity.liveness && !activity.waiting && (
-          <p className="text-(--ui-text-tertiary)">{k.operationUnknown}</p>
-        )}
+        {activity.liveness && !activity.waiting && <p className="text-(--ui-text-tertiary)">{k.operationUnknown}</p>}
         {activity.waiting && (
           <div className="flex flex-col gap-0.5 border-t border-(--ui-border-secondary) pt-2">
             <div className="flex items-baseline gap-2">
@@ -1089,7 +1091,12 @@ export function TaskDrawer({
                       const { detail: extra, label } = eventText(event, k)
 
                       return (
-                        <li className="flex items-baseline gap-2 text-[0.6875rem]" id={`kanban-event-${event.id}`} key={event.id} tabIndex={-1}>
+                        <li
+                          className="flex items-baseline gap-2 text-[0.6875rem]"
+                          id={`kanban-event-${event.id}`}
+                          key={event.id}
+                          tabIndex={-1}
+                        >
                           <span className="shrink-0 text-(--ui-text-secondary)">{label}</span>
                           {extra && (
                             <span
@@ -1116,7 +1123,12 @@ export function TaskDrawer({
                       const failed = ['crashed', 'failed', 'timed_out', 'gave_up'].includes(run.outcome ?? run.status)
 
                       return (
-                        <li className="flex flex-col gap-0.5 text-[0.71rem]" id={`kanban-run-${run.id}`} key={run.id} tabIndex={-1}>
+                        <li
+                          className="flex flex-col gap-0.5 text-[0.71rem]"
+                          id={`kanban-run-${run.id}`}
+                          key={run.id}
+                          tabIndex={-1}
+                        >
                           <div className="flex items-center gap-2">
                             <Badge size="xs" variant={failed ? 'destructive' : 'muted'}>
                               {run.outcome ?? run.status}

@@ -1,0 +1,11 @@
+
+Running 1 test using 1 worker
+
+{"before":"Card age 2d 7h\nThis attempt 37m 19s\nno heartbeat","after":"Card age 2d 7h\nThis attempt 37m 20s\nno heartbeat"}
+{"focused":"kanban-event-24528","url":"#/kanban"}
+{"observedClaim":-1}
+NEGATIVE: missing current claim is visibly unavailable; no fallback to the old run
+RESTORED: current attempt reading recovered
+  ✓  1 e2e/kanban-live.spec.ts:10:1 › Kanban live: clocks and source navigation against a real backend (31.6s)
+
+  1 passed (31.9s)

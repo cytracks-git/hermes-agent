@@ -1,0 +1,61 @@
+Logs integrais: /repo/docs/evidencia/t_feb30927/controles
+=== BASELINE ===
+ Test Files  3 passed (3)
+      Tests  62 passed (62)
+   Duration  22.43s (transform 12.83s, setup 1.55s, import 26.77s, tests 6.10s, environment 5.13s)
+PRODUCER_EXIT=0
+MUTANTE: heartbeat
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 61 passed (62)
+   Duration  20.40s (transform 10.22s, setup 1.23s, import 23.12s, tests 5.51s, environment 6.88s)
+PRODUCER_EXIT=1
+ACUSOU: assercao falhou, produtor rc=1
+MUTANTE: tentativa
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  2 failed | 1 passed (3)
+      Tests  5 failed | 57 passed (62)
+   Duration  26.32s (transform 10.20s, setup 1.75s, import 25.39s, tests 10.61s, environment 6.16s)
+PRODUCER_EXIT=1
+ACUSOU: assercao falhou, produtor rc=1
+MUTANTE: zero-filhos
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 61 passed (62)
+   Duration  25.08s (transform 10.58s, setup 1.31s, import 30.30s, tests 5.55s, environment 10.59s)
+PRODUCER_EXIT=1
+ACUSOU: assercao falhou, produtor rc=1
+MUTANTE: tempo-antigo
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  3 failed (3)
+      Tests  4 failed | 58 passed (62)
+   Duration  27.95s (transform 11.40s, setup 1.43s, import 28.64s, tests 10.67s, environment 6.13s)
+PRODUCER_EXIT=1
+ACUSOU: assercao falhou, produtor rc=1
+MUTANTE: ausente
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  2 failed | 1 passed (3)
+      Tests  5 failed | 57 passed (62)
+   Duration  36.77s (transform 13.34s, setup 1.48s, import 33.97s, tests 17.56s, environment 4.41s)
+PRODUCER_EXIT=1
+ACUSOU: assercao falhou, produtor rc=1
+MUTANTE: erro-silencioso
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 61 passed (62)
+   Duration  32.35s (transform 10.87s, setup 1.12s, import 23.83s, tests 17.71s, environment 5.66s)
+PRODUCER_EXIT=1
+ACUSOU: assercao falhou, produtor rc=1
+MUTANTE: motivo
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 61 passed (62)
+   Duration  27.65s (transform 13.83s, setup 1.02s, import 39.44s, tests 5.62s, environment 4.76s)
+PRODUCER_EXIT=1
+ACUSOU: assercao falhou, produtor rc=1
+=== RESTAURADO ===
+ Test Files  3 passed (3)
+      Tests  62 passed (62)
+   Duration  23.65s (transform 13.65s, setup 1.48s, import 29.15s, tests 5.74s, environment 6.91s)
+PRODUCER_EXIT=0
+MUTANTES_NAO_DETECTADOS=0

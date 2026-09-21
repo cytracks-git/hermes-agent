@@ -1,0 +1,73 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:37:20). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.10 /repo/apps/desktop
+
+ ✓ |ui| src/lib/time.test.ts (16 tests) 6ms
+ ❯ |ui| src/plugins/kanban/activity.test.ts (32 tests | 1 failed) 18ms
+     ✓ keeps minutes visible above a day and rejects non-finite telemetry 2ms
+     ✓ renders two units so an hour-scale label keeps moving every minute 0ms
+     ✓ omits a zero remainder and renders sub-minute durations alone 0ms
+     ✓ returns null for a missing duration instead of "0s" 0ms
+     ✓ never uses an old run as the replacement claim or a heartbeat from that run 1ms
+     ✓ keeps card age and current attempt as separate readings 0ms
+     ✓ reports a replacement attempt from the CURRENT claim, not the first one 0ms
+     ✓ stops a completed attempt at its end, and selects it independently of response order 0ms
+     ✓ says nothing about an attempt that never started 0ms
+     ✓ names the event it read, with its own timestamp 1ms
+     ✓ prefers a finished run summary over an older event 0ms
+     ✓ counts a human comment as a signal 0ms
+     ✓ CONTROLE NEGATIVO: a heartbeat is NOT progress, even a fresh one 0ms
+     ✓ CONTROLE NEGATIVO: no telemetry at all reads unknown, never "no progress" 0ms
+     ✓ CONTROLE POSITIVO: a board with signals is not blanket-unknown 0ms
+     ✓ survives a malformed payload instead of blanking the panel 0ms
+     ✓ flags a silent worker as stale rather than sweeping green 0ms
+     ✓ says unknown when a running card never reported a heartbeat 0ms
+     ✓ does not report liveness for a card that is not running 0ms
+     ✓ does not resurrect waits after completion or a newer recovery event 0ms
+     ✓ reads a dependency wait off the event payload, naming the parent 0ms
+     × reads a block reason from the task, not from a guess 8ms
+     ✓ surfaces a rate limit as waiting on the provider, not as a crash 0ms
+     ✓ passes a preflight refusal through VERBATIM, without re-deriving it 0ms
+     ✓ tells a ready card with nobody attached to get an assignee 0ms
+     ✓ CONTROLE NEGATIVO: a configured fallback removes the unassigned warning 0ms
+     ✓ points a review card at the reviewer, never at the author 0ms
+     ✓ only offers reclaim once the worker has actually gone quiet 0ms
+     ✓ leaves a plain running card alone — no invented next action 0ms
+     ✓ ignores an ancient event that a newer state already superseded 0ms
+     ✓ reports child completion only when children exist 0ms
+     ✓ CONTROLE NEGATIVO: a zero-child rollup is not 0% 0ms
+ ✓ |ui| src/plugins/kanban/drawer.test.tsx (14 tests) 5598ms
+     ✓ updates the attempt across a minute and exposes the source to the keyboard  5044ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |ui| src/plugins/kanban/activity.test.ts > cardActivity — waiting and next action > reads a block reason from the task, not from a guess
+AssertionError: expected { detail: 'blocked', kind: 'input' } to deeply equal { detail: 'which option?', …(1) }
+
+- Expected
++ Received
+
+  {
+-   "detail": "which option?",
++   "detail": "blocked",
+    "kind": "input",
+  }
+
+ ❯ src/plugins/kanban/activity.test.ts:260:25
+    258|     )
+    259|
+    260|     expect(act.waiting).toEqual({ detail: 'which option?', kind: 'inpu…
+       |                         ^
+    261|     expect(act.nextAction).toBe('answer')
+    262|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 61 passed (62)
+   Start at  12:31:03
+   Duration  27.65s (transform 13.83s, setup 1.02s, import 39.44s, tests 5.62s, environment 4.76s)
+

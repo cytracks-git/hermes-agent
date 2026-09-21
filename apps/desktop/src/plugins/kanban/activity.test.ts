@@ -70,9 +70,7 @@ describe('cardActivity — age is not the attempt', () => {
     expect(cardActivity(input({ task: t, runs: [current, old] })).liveness).toBe('unknown')
   })
   it('keeps card age and current attempt as separate readings', () => {
-    const act = cardActivity(
-      input({ task: task({ created_at: s(3 * DAY), started_at: s(2 * HOUR + 5 * MIN) }) })
-    )
+    const act = cardActivity(input({ task: task({ created_at: s(3 * DAY), started_at: s(2 * HOUR + 5 * MIN) }) }))
 
     expect(act.ageSeconds).toBe(3 * DAY)
     expect(act.attemptSeconds).toBeNull()
@@ -110,7 +108,10 @@ describe('cardActivity — age is not the attempt', () => {
     const finished = run({ id: 2, status: 'ended', started_at: s(HOUR), ended_at: s(20 * MIN) })
     const old = run({ id: 1, status: 'ended', started_at: s(DAY), ended_at: s(23 * HOUR) })
 
-    for (const runs of [[old, finished], [finished, old]]) {
+    for (const runs of [
+      [old, finished],
+      [finished, old]
+    ]) {
       const act = cardActivity(input({ task: task({ status: 'done' }), runs }))
       expect(act.attemptSeconds).toBe(40 * MIN)
     }
@@ -153,9 +154,7 @@ describe('cardActivity — progress needs a verifiable origin', () => {
   })
 
   it('counts a human comment as a signal', () => {
-    const act = cardActivity(
-      input({ comments: [{ id: 3, author: 'h1', body: 'answered', created_at: s(2 * MIN) }] })
-    )
+    const act = cardActivity(input({ comments: [{ id: 3, author: 'h1', body: 'answered', created_at: s(2 * MIN) }] }))
 
     expect(act.lastSignal).toMatchObject({ kind: 'commented', source: 'comment' })
   })
@@ -233,8 +232,9 @@ describe('cardActivity — waiting and next action', () => {
     }
 
     const dependency = [event('dependency_wait', HOUR, { parent: 't_old' })]
-    expect(cardActivity(input({ task: task({ status: 'review', assignee: 'revisor' }), events: dependency })).waiting)
-      .toEqual({ kind: 'review', ref: 'revisor' })
+    expect(
+      cardActivity(input({ task: task({ status: 'review', assignee: 'revisor' }), events: dependency })).waiting
+    ).toEqual({ kind: 'review', ref: 'revisor' })
   })
 
   it('reads a dependency wait off the event payload, naming the parent', () => {

@@ -1,0 +1,152 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:37:20). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.10 /repo/apps/desktop
+
+ ❯ |ui| src/lib/time.test.ts (16 tests | 1 failed) 12ms
+     ✓ reads "now" under two seconds, then seconds 1ms
+     ✓ buckets to the coarsest unit, floored 0ms
+     ✓ clamps future timestamps to "now" 0ms
+     × carries a second unit so hour- and day-scale labels keep moving 5ms
+     ✓ drops a zero remainder instead of padding "1h 0m" 0ms
+     ✓ stops at seconds — the smallest unit has no remainder to show 0ms
+     ✓ clamps a negative delta (clock skew) to zero instead of rendering "-1s" 0ms
+     ✓ agrees with coarseElapsed on the leading unit 0ms
+     ✓ rolls the day boundary at 4 AM, not midnight 1ms
+     ✓ buckets the current day (and, defensively, the future) as today 1ms
+     ✓ assigns the small hours to the previous evening 0ms
+     ✓ uses coarse, non-overlapping ranges that coarsen with age 0ms
+     ✓ respects a Sunday week start 0ms
+     ✓ keys same-month sessions together and disambiguates across years 0ms
+     ✓ uses fixed labels for the relative buckets 0ms
+     ✓ formats month (same year) and month + year (prior year) via Intl 0ms
+ ❯ |ui| src/plugins/kanban/activity.test.ts (32 tests | 2 failed) 17ms
+     × keeps minutes visible above a day and rejects non-finite telemetry 6ms
+     × renders two units so an hour-scale label keeps moving every minute 1ms
+     ✓ omits a zero remainder and renders sub-minute durations alone 0ms
+     ✓ returns null for a missing duration instead of "0s" 0ms
+     ✓ never uses an old run as the replacement claim or a heartbeat from that run 1ms
+     ✓ keeps card age and current attempt as separate readings 0ms
+     ✓ reports a replacement attempt from the CURRENT claim, not the first one 0ms
+     ✓ stops a completed attempt at its end, and selects it independently of response order 0ms
+     ✓ says nothing about an attempt that never started 0ms
+     ✓ names the event it read, with its own timestamp 1ms
+     ✓ prefers a finished run summary over an older event 0ms
+     ✓ counts a human comment as a signal 1ms
+     ✓ CONTROLE NEGATIVO: a heartbeat is NOT progress, even a fresh one 0ms
+     ✓ CONTROLE NEGATIVO: no telemetry at all reads unknown, never "no progress" 0ms
+     ✓ CONTROLE POSITIVO: a board with signals is not blanket-unknown 0ms
+     ✓ survives a malformed payload instead of blanking the panel 0ms
+     ✓ flags a silent worker as stale rather than sweeping green 0ms
+     ✓ says unknown when a running card never reported a heartbeat 0ms
+     ✓ does not report liveness for a card that is not running 0ms
+     ✓ does not resurrect waits after completion or a newer recovery event 0ms
+     ✓ reads a dependency wait off the event payload, naming the parent 0ms
+     ✓ reads a block reason from the task, not from a guess 0ms
+     ✓ surfaces a rate limit as waiting on the provider, not as a crash 0ms
+     ✓ passes a preflight refusal through VERBATIM, without re-deriving it 0ms
+     ✓ tells a ready card with nobody attached to get an assignee 0ms
+     ✓ CONTROLE NEGATIVO: a configured fallback removes the unassigned warning 0ms
+     ✓ points a review card at the reviewer, never at the author 0ms
+     ✓ only offers reclaim once the worker has actually gone quiet 0ms
+     ✓ leaves a plain running card alone — no invented next action 0ms
+     ✓ ignores an ancient event that a newer state already superseded 0ms
+     ✓ reports child completion only when children exist 0ms
+     ✓ CONTROLE NEGATIVO: a zero-child rollup is not 0% 0ms
+ ❯ |ui| src/plugins/kanban/drawer.test.tsx (14 tests | 1 failed) 10644ms
+     ✓ keeps older task details usable without attachment controls ({}) 227ms
+     ✓ keeps older task details usable without attachment controls ({"attachments":null}) 84ms
+     ✓ keeps upload and attachment rendering working for a supported empty list 72ms
+     ✓ does not label a pending response as unknown progress 17ms
+     ✓ keeps a failed read visible: 403: Forbidden 18ms
+     ✓ keeps a failed read visible: 500: Backend unavailable 19ms
+     ✓ keeps unknown heartbeat out of the green board arc 0ms
+     × updates the attempt across a minute and exposes the source to the keyboard 10006ms
+     ✓ shows missing attempt and heartbeat explicitly, without zero or green progress 33ms
+     ✓ separates card age from the current attempt 59ms
+     ✓ says progress is UNKNOWN when nothing was reported, never "stalled" 26ms
+     ✓ shows a block reason verbatim with the next action 29ms
+     ✓ keeps the drawer usable when the activity payload is malformed 27ms
+     ✓ says the panel FAILED instead of vanishing when the reading throws 25ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |ui| src/lib/time.test.ts > elapsedParts > carries a second unit so hour- and day-scale labels keep moving
+AssertionError: expected [ { unit: 'hour', value: 1 } ] to deeply equal [ { unit: 'hour', value: 1 }, …(1) ]
+
+- Expected
++ Received
+
+  [
+    {
+      "unit": "hour",
+      "value": 1,
+    },
+-   {
+-     "unit": "minute",
+-     "value": 59,
+-   },
+  ]
+
+ ❯ src/lib/time.test.ts:53:46
+     51|   // the label live again, so every case below pins BOTH parts.
+     52|   it('carries a second unit so hour- and day-scale labels keep moving'…
+     53|     expect(elapsedParts(HOUR + 59 * MINUTE)).toEqual([
+       |                                              ^
+     54|       { unit: 'hour', value: 1 },
+     55|       { unit: 'minute', value: 59 }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |ui| src/plugins/kanban/activity.test.ts > formatElapsed > keeps minutes visible above a day and rejects non-finite telemetry
+AssertionError: expected '2d' to be '2d 4h 7m' // Object.is equality
+
+Expected: "2d 4h 7m"
+Received: "2d"
+
+ ❯ src/plugins/kanban/activity.test.ts:40:57
+     38| describe('formatElapsed', () => {
+     39|   it('keeps minutes visible above a day and rejects non-finite telemet…
+     40|     expect(formatElapsed(2 * DAY + 4 * HOUR + 7 * MIN)).toBe('2d 4h 7m…
+       |                                                         ^
+     41|     expect(formatElapsed(Number.NaN)).toBeNull()
+     42|     expect(formatElapsed(Number.POSITIVE_INFINITY)).toBeNull()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |ui| src/plugins/kanban/activity.test.ts > formatElapsed > renders two units so an hour-scale label keeps moving every minute
+AssertionError: expected '1h' to be '1h 59m' // Object.is equality
+
+Expected: "1h 59m"
+Received: "1h"
+
+ ❯ src/plugins/kanban/activity.test.ts:46:44
+     44|   it('renders two units so an hour-scale label keeps moving every minu…
+     45|     // O defeito original: "1h" parado por 59 minutos.
+     46|     expect(formatElapsed(HOUR + 59 * MIN)).toBe('1h 59m')
+       |                                            ^
+     47|     expect(formatElapsed(2 * DAY + 4 * HOUR)).toBe('2d 4h')
+     48|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |ui| src/plugins/kanban/drawer.test.tsx > TaskDrawer progress panel > updates the attempt across a minute and exposes the source to the keyboard
+Error: Test timed out in 10000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/plugins/kanban/drawer.test.tsx:197:3
+    195|   })
+    196|
+    197|   it('updates the attempt across a minute and exposes the source to th…
+       |   ^
+    198|     const started = now() - 2 * 3600 - 7 * 60
+    199|     detail = {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  3 failed (3)
+      Tests  4 failed | 58 passed (62)
+   Start at  12:29:21
+   Duration  27.95s (transform 11.40s, setup 1.43s, import 28.64s, tests 10.67s, environment 6.13s)
+

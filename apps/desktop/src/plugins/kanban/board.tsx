@@ -85,7 +85,6 @@ import { OrchestrationPanel } from './orchestration'
 import { columnMeta, type KanbanBoard, type KanbanTask, type TaskEstimate } from './types'
 import {
   $newTaskLane,
-  ago,
   type ArcState,
   arcState,
   Avatar,
@@ -99,7 +98,8 @@ import {
   shortId,
   useDefaultAssignee,
   useKanban,
-  useOrchestration
+  useOrchestration,
+  useTicking
 } from './ui'
 
 // ── optimistic board edits (reconciled by the follow-up refresh) ─────────────
@@ -147,7 +147,7 @@ function Meta({ children, icon }: { children: ReactNode; icon: string }) {
 
 function CardFooter({ arc, task }: { arc: ArcState | null; task: KanbanTask }) {
   const k = useKanban()
-  const created = ago(task.created_at)
+  const created = useTicking(task.created_at)
   const links = task.link_counts ? task.link_counts.parents + task.link_counts.children : 0
   const fallback = useDefaultAssignee()
   const orchestrator = useOrchestration()?.resolved_orchestrator_profile ?? ''
@@ -196,9 +196,11 @@ function CardFooter({ arc, task }: { arc: ArcState | null; task: KanbanTask }) {
           </span>
         </Tip>
       )}
-      {arc === 'stale' && (
-        <Tip label={k.arcStale}>
-          <span className="shrink-0 cursor-help font-medium text-amber-500">{k.noHeartbeat}</span>
+      {(arc === 'stale' || arc === 'unknown') && (
+        <Tip label={arc === 'unknown' ? k.neverBeat : k.arcStale}>
+          <span className="shrink-0 cursor-help font-medium text-amber-500">
+            {arc === 'unknown' ? k.heartbeatUnknown : k.noHeartbeat}
+          </span>
         </Tip>
       )}
       {unassignedReady && !fallback && (
@@ -1338,7 +1340,7 @@ export function KanbanBoardPage() {
           {total}
         </span>
         {board?.pending_approvals !== undefined && (
-          <span role="status" className="text-xs text-foreground">
+          <span className="text-xs text-foreground" role="status">
             Pending approvals: {board.pending_approvals}
           </span>
         )}

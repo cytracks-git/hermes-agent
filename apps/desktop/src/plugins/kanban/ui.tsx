@@ -93,7 +93,7 @@ export function duration(start?: null | number, end?: null | number): null | str
 // ── liveness ─────────────────────────────────────────────────────────────────
 
 /** Live elapsed label ("34s", "1h 23m") that keeps ticking while mounted. */
-function useTicking(start?: null | number): null | string {
+export function useTicking(start?: null | number): null | string {
   const [, force] = useState(0)
 
   useEffect(() => {
@@ -115,7 +115,7 @@ function useTicking(start?: null | number): null | string {
     .join(' ')
 }
 
-export type ArcState = 'queued' | 'running' | 'stale'
+export type ArcState = 'queued' | 'running' | 'stale' | 'unknown'
 
 /**
  * The card's machine-activity state. The board looked dead between "I made a
@@ -126,6 +126,10 @@ export type ArcState = 'queued' | 'running' | 'stale'
  */
 export function arcState(task: KanbanTask, fallbackAssignee: string): ArcState | null {
   if (task.status === 'running') {
+    if (task.last_heartbeat_at == null) {
+      return 'unknown'
+    }
+
     // No heartbeat for 2+ min = the worker may have died; the dispatcher will
     // reclaim it, but be honest instead of sweeping green forever.
     const stale = task.last_heartbeat_at ? Date.now() / 1000 - task.last_heartbeat_at > 120 : false

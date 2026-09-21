@@ -226,7 +226,7 @@ const UNIT_MS: Record<ElapsedUnit, number> = { day: DAY, hour: HOUR, minute: MIN
 
 /**
  * Elapsed duration as its coarsest unit PLUS the remainder in the next unit
- * down — `[1h, 59m]`, `[2d, 4h]`, `[12m, 5s]`.
+ * down — `[1h, 59m]`, `[2d, 4h, 7m]`, `[12m, 5s]`.
  *
  * Por que existe, e nao so `coarseElapsed`: uma etiqueta de uma unidade so,
  * arredondada para baixo, CONGELA. Um card em 1h59 mostra "1h" e nao mexe um
@@ -237,7 +237,7 @@ const UNIT_MS: Record<ElapsedUnit, number> = { day: DAY, hour: HOUR, minute: MIN
  * mais detalhe). O resto e omitido quando e zero, para nao render "2h 0m", e
  * `second` nao tem resto: e o menor termo. Quem renderiza decide o formato.
  */
-export function elapsedParts(deltaMs: number): [ElapsedPart] | [ElapsedPart, ElapsedPart] {
+export function elapsedParts(deltaMs: number): ElapsedPart[] {
   const head = coarseElapsed(deltaMs)
   const smaller = NEXT_SMALLER[head.unit]
 
@@ -248,7 +248,15 @@ export function elapsedParts(deltaMs: number): [ElapsedPart] | [ElapsedPart, Ela
   const remainder = Math.max(0, deltaMs) - head.value * UNIT_MS[head.unit]
   const value = Math.floor(remainder / UNIT_MS[smaller])
 
-  return value > 0 ? [head, { unit: smaller, value }] : [head]
+  const parts: ElapsedPart[] = value > 0 ? [head, { unit: smaller, value }] : [head]
+  // Preservar minutos acima de um dia evita uma hora inteira sem atualização.
+  const minutes = Math.floor((Math.max(0, deltaMs) % HOUR) / MINUTE)
+
+  if (head.unit === 'day' && minutes > 0) {
+    parts.push({ unit: 'minute', value: minutes })
+  }
+
+  return parts
 }
 
 // Localized strings for `formatAgo`; shaped to accept `t.agents` directly.

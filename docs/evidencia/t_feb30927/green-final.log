@@ -1,0 +1,24 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:37:20). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.10 /repo/apps/desktop
+
+ ✓ |ui| src/lib/time.test.ts (16 tests) 9ms
+ ✓ |ui| src/plugins/kanban/completion-notify.test.ts (31 tests) 814ms
+     ✓ notifies an approval request once without posting a decision  730ms
+ ✓ |ui| src/plugins/kanban/activity.test.ts (32 tests) 20ms
+ ✓ |ui| src/plugins/kanban/approval-panel.test.tsx (5 tests) 361ms
+ ✓ |ui| src/plugins/kanban/model-override.test.tsx (9 tests) 516ms
+     ✓ lists the catalog and reports a picked model  455ms
+ ✓ |ui| src/plugins/kanban/board-switcher.test.tsx (2 tests) 532ms
+     ✓ identifies the current board switcher as a control  463ms
+ ✓ |ui| src/plugins/kanban/drawer.test.tsx (14 tests) 6012ms
+     ✓ keeps older task details usable without attachment controls ({})  560ms
+     ✓ updates the attempt across a minute and exposes the source to the keyboard  5042ms
+
+ Test Files  7 passed (7)
+      Tests  109 passed (109)
+   Start at  12:32:22
+   Duration  45.54s (transform 64.82s, setup 4.75s, import 167.60s, tests 8.26s, environment 31.45s)
+

@@ -127,6 +127,8 @@ type KanbanMessages = {
   progress: string
   /** Card age — how long the WORK has existed, across every attempt. */
   cardAge: string
+  attemptUnknown: string
+  heartbeatUnknown: string
   /** Current attempt only. Distinct from age on purpose: a 9-day-old card whose
    *  worker restarted 3 minutes ago is not a card stuck for 9 days. */
   attempt: string
@@ -384,6 +386,8 @@ export const en: KanbanMessages = {
   metaWorkerPid: 'Worker pid',
   progress: 'Progress',
   cardAge: 'Card age',
+  attemptUnknown: 'Unknown — no run reported',
+  heartbeatUnknown: 'Heartbeat unknown',
   attempt: 'This attempt',
   attemptNth: n => `attempt ${n}`,
   lastSignal: 'Last signal',
@@ -633,6 +637,8 @@ const ja: KanbanMessages = {
   metaWorkerPid: 'ワーカー PID',
   progress: '進捗',
   cardAge: 'カードの経過時間',
+  attemptUnknown: '不明 — 実行記録なし',
+  heartbeatUnknown: 'ハートビート不明',
   attempt: '現在の試行',
   attemptNth: n => `試行 ${n}`,
   lastSignal: '最新のシグナル',
@@ -881,6 +887,8 @@ const zh: KanbanMessages = {
   metaWorkerPid: '工作单元 PID',
   progress: '进度',
   cardAge: '卡片存在时长',
+  attemptUnknown: '未知 — 无运行记录',
+  heartbeatUnknown: '心跳未知',
   attempt: '本次尝试',
   attemptNth: n => `第 ${n} 次尝试`,
   lastSignal: '最新信号',
@@ -1126,6 +1134,8 @@ const zhHant: KanbanMessages = {
   metaWorkerPid: '工作單元 PID',
   progress: '進度',
   cardAge: '卡片存在時長',
+  attemptUnknown: '未知 — 無執行記錄',
+  heartbeatUnknown: '心跳未知',
   attempt: '本次嘗試',
   attemptNth: n => `第 ${n} 次嘗試`,
   lastSignal: '最新訊號',

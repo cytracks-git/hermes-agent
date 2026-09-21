@@ -41,7 +41,7 @@ const SUFFIX = { day: 'd', hour: 'h', minute: 'm', second: 's' } as const
  * zero, e quem chama precisa poder escrever "desconhecido" em vez de "0s".
  */
 export function formatElapsed(seconds?: null | number): null | string {
-  if (seconds == null) {
+  if (seconds == null || !Number.isFinite(seconds)) {
     return null
   }
 
@@ -195,7 +195,13 @@ function latestCommentSignal(comments: KanbanComment[]): ActivitySignal | null {
       continue
     }
 
-    best = { at: comment.created_at, id: comment.id, detail: comment.body || undefined, kind: 'commented', source: 'comment' }
+    best = {
+      at: comment.created_at,
+      id: comment.id,
+      detail: comment.body || undefined,
+      kind: 'commented',
+      source: 'comment'
+    }
   }
 
   return best
@@ -230,7 +236,10 @@ function waitingOn(input: ActivityInput): WaitingOn | null {
   // Transicoes explicitas invalidam esperas anteriores; comentario e heartbeat
   // nao resolvem bloqueio. Nao reaproveitar uma recusa historica como estado atual.
   const transitions = new Set(['claimed', 'spawned', 'unblocked', 'promoted', 'review_requested', 'changes_requested'])
-  const since = Math.max(task.started_at ?? 0, ...events.filter(event => transitions.has(event.kind)).map(event => event.created_at))
+  const since = Math.max(
+    task.started_at ?? 0,
+    ...events.filter(event => transitions.has(event.kind)).map(event => event.created_at)
+  )
 
   const refused = currentEvent(events, 'preflight_refused', since)
 
@@ -287,7 +296,23 @@ export function cardActivity(input: ActivityInput): CardActivity {
   const { comments = [], events = [], now, runs = [], task } = input
 
   const running = task.status === 'running'
-  const heartbeatSeconds = spanSeconds(task.last_heartbeat_at, now)
+
+  const latestRun =
+    task.current_run_id != null
+      ? runs.find(run => run.id === task.current_run_id)
+      : runs.reduce<KanbanRun | null>(
+          (best, run) => (!best || (run.started_at ?? 0) > (best.started_at ?? 0) ? run : best),
+          null
+        )
+
+  const attemptStart = latestRun?.started_at
+  const attemptEnd = latestRun?.ended_at ?? (running && latestRun ? now : null)
+
+  // Um batimento anterior ao claim atual não comprova vida do worker substituto.
+  const heartbeatSeconds =
+    attemptStart != null && (task.last_heartbeat_at ?? 0) < attemptStart
+      ? null
+      : spanSeconds(task.last_heartbeat_at, now)
 
   let liveness: Liveness | null = null
 
@@ -319,11 +344,7 @@ export function cardActivity(input: ActivityInput): CardActivity {
   //
   // `worker_started_at` tambem nao serve: no mesmo board vem corrompido
   // (178986025628, 178986104888 — digitos a mais), entao seria pior.
-  const latestRun = runs.reduce<KanbanRun | null>((best, run) =>
-    !best || (run.started_at ?? 0) > (best.started_at ?? 0) ? run : best, null)
-
-  const attemptStart = latestRun?.started_at ?? task.started_at
-  const attemptEnd = latestRun?.ended_at ?? (running ? now : task.completed_at)
+  // Sem run correspondente, a duração é desconhecida; started_at não é fallback.
 
   return {
     ageSeconds: spanSeconds(task.created_at, now),

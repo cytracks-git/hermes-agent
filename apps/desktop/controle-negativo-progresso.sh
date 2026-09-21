@@ -54,13 +54,13 @@ roda baseline || exit 2
 mutante heartbeat \
   perl -0pi -e "s/new Set\(\['heartbeat', 'respawn_guarded'\]\)/new Set(['respawn_guarded'])/" "$ACT"
 mutante tentativa \
-  perl -0pi -e "s/const attemptStart = latestRun\?\.started_at \?\? task\.started_at/const attemptStart = task.started_at/" "$ACT"
+  perl -0pi -e "s/const attemptStart = latestRun\?\.started_at/const attemptStart = task.started_at/" "$ACT"
 mutante zero-filhos \
   perl -0pi -e "s/progress && progress\.total > 0 \?/progress ?/" "$ACT"
 mutante tempo-antigo \
-  perl -0pi -e "s/return value > 0 \? \[head, \{ unit: smaller, value \}\] : \[head\]/return [head]/" "$TIME"
+  perl -0pi -e "s/return parts/return [head]/" "$TIME"
 mutante ausente \
-  perl -0pi -e "s/  if \(seconds == null\) \{\n    return null\n  \}/  if (seconds == null) {\n    return '0s'\n  }/" "$ACT"
+  perl -0pi -e "s/return null/return '0s'/" "$ACT"
 mutante erro-silencioso \
   perl -0pi -e "s/\{activityFailed && \(/{false \&\& (/" "$DRAWER"
 mutante motivo \

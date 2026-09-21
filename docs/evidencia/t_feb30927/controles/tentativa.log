@@ -1,0 +1,284 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:37:20). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.10 /repo/apps/desktop
+
+ ✓ |ui| src/lib/time.test.ts (16 tests) 5ms
+ ❯ |ui| src/plugins/kanban/activity.test.ts (32 tests | 3 failed) 11ms
+     ✓ keeps minutes visible above a day and rejects non-finite telemetry 1ms
+     ✓ renders two units so an hour-scale label keeps moving every minute 0ms
+     ✓ omits a zero remainder and renders sub-minute durations alone 0ms
+     ✓ returns null for a missing duration instead of "0s" 0ms
+     × never uses an old run as the replacement claim or a heartbeat from that run 4ms
+     ✓ keeps card age and current attempt as separate readings 0ms
+     × reports a replacement attempt from the CURRENT claim, not the first one 1ms
+     × stops a completed attempt at its end, and selects it independently of response order 0ms
+     ✓ says nothing about an attempt that never started 0ms
+     ✓ names the event it read, with its own timestamp 0ms
+     ✓ prefers a finished run summary over an older event 0ms
+     ✓ counts a human comment as a signal 0ms
+     ✓ CONTROLE NEGATIVO: a heartbeat is NOT progress, even a fresh one 0ms
+     ✓ CONTROLE NEGATIVO: no telemetry at all reads unknown, never "no progress" 0ms
+     ✓ CONTROLE POSITIVO: a board with signals is not blanket-unknown 0ms
+     ✓ survives a malformed payload instead of blanking the panel 0ms
+     ✓ flags a silent worker as stale rather than sweeping green 0ms
+     ✓ says unknown when a running card never reported a heartbeat 0ms
+     ✓ does not report liveness for a card that is not running 0ms
+     ✓ does not resurrect waits after completion or a newer recovery event 0ms
+     ✓ reads a dependency wait off the event payload, naming the parent 0ms
+     ✓ reads a block reason from the task, not from a guess 0ms
+     ✓ surfaces a rate limit as waiting on the provider, not as a crash 0ms
+     ✓ passes a preflight refusal through VERBATIM, without re-deriving it 0ms
+     ✓ tells a ready card with nobody attached to get an assignee 0ms
+     ✓ CONTROLE NEGATIVO: a configured fallback removes the unassigned warning 0ms
+     ✓ points a review card at the reviewer, never at the author 0ms
+     ✓ only offers reclaim once the worker has actually gone quiet 0ms
+     ✓ leaves a plain running card alone — no invented next action 0ms
+     ✓ ignores an ancient event that a newer state already superseded 0ms
+     ✓ reports child completion only when children exist 0ms
+     ✓ CONTROLE NEGATIVO: a zero-child rollup is not 0% 0ms
+ ❯ |ui| src/plugins/kanban/drawer.test.tsx (14 tests | 2 failed) 10591ms
+     ✓ keeps older task details usable without attachment controls ({}) 203ms
+     ✓ keeps older task details usable without attachment controls ({"attachments":null}) 62ms
+     ✓ keeps upload and attachment rendering working for a supported empty list 53ms
+     ✓ does not label a pending response as unknown progress 10ms
+     ✓ keeps a failed read visible: 403: Forbidden 13ms
+     ✓ keeps a failed read visible: 500: Backend unavailable 12ms
+     ✓ keeps unknown heartbeat out of the green board arc 0ms
+     × updates the attempt across a minute and exposes the source to the keyboard 10009ms
+     ✓ shows missing attempt and heartbeat explicitly, without zero or green progress 34ms
+     × separates card age from the current attempt 56ms
+     ✓ says progress is UNKNOWN when nothing was reported, never "stalled" 40ms
+     ✓ shows a block reason verbatim with the next action 31ms
+     ✓ keeps the drawer usable when the activity payload is malformed 34ms
+     ✓ says the panel FAILED instead of vanishing when the reading throws 31ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |ui| src/plugins/kanban/activity.test.ts > cardActivity — age is not the attempt > never uses an old run as the replacement claim or a heartbeat from that run
+AssertionError: expected 86400 to be 60 // Object.is equality
+
+- Expected
++ Received
+
+- 60
++ 86400
+
+ ❯ src/plugins/kanban/activity.test.ts:69:83
+     67|     const t = task({ current_run_id: 2, started_at: s(DAY), last_heart…
+     68|     expect(cardActivity(input({ task: t, runs: [old] })).attemptSecond…
+     69|     expect(cardActivity(input({ task: t, runs: [current, old] })).atte…
+       |                                                                                   ^
+     70|     expect(cardActivity(input({ task: t, runs: [current, old] })).live…
+     71|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |ui| src/plugins/kanban/activity.test.ts > cardActivity — age is not the attempt > reports a replacement attempt from the CURRENT claim, not the first one
+AssertionError: expected '9d' to be '3m' // Object.is equality
+
+Expected: "3m"
+Received: "9d"
+
+ ❯ src/plugins/kanban/activity.test.ts:101:47
+     99|     )
+    100|
+    101|     expect(formatElapsed(act.attemptSeconds)).toBe('3m')
+       |                                               ^
+    102|     expect(act.attemptNumber).toBe(2)
+    103|     // E a idade continua contando os 9 dias: as duas leituras convive…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |ui| src/plugins/kanban/activity.test.ts > cardActivity — age is not the attempt > stops a completed attempt at its end, and selects it independently of response order
+AssertionError: expected null to be 2400 // Object.is equality
+
+- Expected:
+2400
+
++ Received:
+null
+
+ ❯ src/plugins/kanban/activity.test.ts:116:34
+    114|     ]) {
+    115|       const act = cardActivity(input({ task: task({ status: 'done' }),…
+    116|       expect(act.attemptSeconds).toBe(40 * MIN)
+       |                                  ^
+    117|     }
+    118|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |ui| src/plugins/kanban/drawer.test.tsx > TaskDrawer progress panel > updates the attempt across a minute and exposes the source to the keyboard
+Error: Test timed out in 10000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/plugins/kanban/drawer.test.tsx:197:3
+    195|   })
+    196|
+    197|   it('updates the attempt across a minute and exposes the source to th…
+       |   ^
+    198|     const started = now() - 2 * 3600 - 7 * 60
+    199|     detail = {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |ui| src/plugins/kanban/drawer.test.tsx > TaskDrawer progress panel > separates card age from the current attempt
+TestingLibraryElementError: Unable to find an element with the text: /3m/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"absolute inset-y-0 right-0 z-20 flex w-[26rem] flex-col border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) duration-150 ease-out animate-in fade-in slide-in-from-right-4"[39m
+    [36m>[39m
+      [36m<header[39m
+        [33mclass[39m=[32m"flex flex-col gap-2 px-4 pt-3.5 pb-3"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex items-center gap-2"[39m
+        [36m>[39m
+          [36m<button[39m
+            [33maria-expanded[39m=[32m"false"[39m
+            [33maria-haspopup[39m=[32m"menu"[39m
+            [33mclass[39m=[32m"inline-flex items-center gap-1.5 rounded px-2 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide transition-[filter] hover:brightness-105"[39m
+            [33mdata-slot[39m=[32m"dropdown-menu-trigger"[39m
+            [33mdata-state[39m=[32m"closed"[39m
+            [33mid[39m=[32m"radix-_r_1o_"[39m
+            [33mstyle[39m=[32m"background-color: color-mix(in srgb, rgb(52, 211, 153) 15%, transparent); color: rgb(52, 211, 153);"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"size-1.5 rounded-full"[39m
+              [33mstyle[39m=[32m"background-color: rgb(52, 211, 153);"[39m
+            [36m/>[39m
+            [0mRunning[0m
+            [36m<i[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"codicon codicon-chevron-down"[39m
+              [33mstyle[39m=[32m"font-size: 0.7rem;"[39m
+            [36m/>[39m
+          [36m</button>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"font-mono text-[0.625rem] text-(--ui-text-quaternary)"[39m
+            [33mdata-selectable-text[39m=[32m"true"[39m
+          [36m>[39m
+            [0mexampl[0m
+          [36m</span>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"ml-auto flex items-center gap-0.5"[39m
+          [36m>[39m
+            [36m<button[39m
+              [33maria-expanded[39m=[32m"false"[39m
+              [33maria-haspopup[39m=[32m"menu"[39m
+              [33maria-label[39m=[32m"Task actions"[39m
+              [33mclass[39m=[32m"grid size-6 place-items-center rounded text-(--ui-text-tertiary) transition-colors hover:bg-(--chrome-action-hover) hover:text-foreground"[39m
+              [33mdata-slot[39m=[32m"dropdown-menu-trigger"[39m
+              [33mdata-state[39m=[32m"closed"[39m
+              [33mid[39m=[32m"radix-_r_1q_"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [36m<i[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"codicon codicon-ellipsis"[39m
+                [33mstyle[39m=[32m"font-size: 0.9rem;"[39m
+              [36m/>[39m
+            [36m</button>[39m
+            [36m<button[39m
+              [33maria-label[39m=[32m"Close"[39m
+              [33mclass[39m=[32m"grid size-6 place-items-center rounded text-(--ui-text-tertiary) transition-colors hover:bg-(--chrome-action-hover) hover:text-foreground"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [36m<i[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"codicon codicon-close"[39m
+                [33mstyle[39m=[32m"font-size: 0.9rem;"[39m
+              [36m/>[39m
+            [36m</button>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<h2[39m
+          [33mclass[39m=[32m"text-sm leading-snug font-semibold text-foreground"[39m
+          [33mdata-selectable-text[39m=[32m"true"[39m
+        [36m>[39m
+          [0mExample task[0m
+        [36m</h2>[39m
+      [36m</header>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"min-h-0 flex-1 overflow-y-auto px-4 pb-4"[39m
+        [33mdata-selectable-text[39m=[32m"true"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex flex-col gap-4 text-sm"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-[0.71rem]"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-(--ui-text-quaternary)"[39m
+            [36m>[39m
+              [0mAssignee[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"min-w-0 truncate text-(--ui-text-secondary)"[39m
+            [36m>[39m
+              [36m<button[39m
+                [33maria-expanded[39m=[32m"false"[39m
+                [33maria-haspopup[39m=[32m"menu"[39m
+                [33mclass[39m=[32m"-mx-1 inline-flex max-w-full items-center gap-1.5 rounded px-1 py-0.5 text-left transition-colors hover:bg-(--chrome-action-hover)"[39m
+                [33mdata-slot[39m=[32m"dropdown-menu-trigger"[39m
+                [33mdata-state[39m=[32m"closed"[39m
+                [33mid[39m=[32m"radix-_r_1s_"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"grid shrink-0 place-items-center rounded-full font-semibold"[39m
+                  [33mstyle[39m=[32m"background-color: color-mix(in srgb, rgb(75, 221, 141) 22%, transparent); color: rgb(75, 221, 141); font-size: 0.5625rem; height: 0.875rem; width: 0.875rem;"[39m
+                  [33mtitle[39m=[32m"executor"[39m
+                [36m>[39m
+                  [0mE[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"truncate"[39m
+                [36m>[39m
+                  [0mexecutor[0m
+                [36m</span>[39m
+                [36m<i[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"codicon codicon-chevron-down shrink-0 text-(--ui-text-quaternary)"[39m
+                  [33mstyle[39m=[32m"font-size: 0.65rem;"[39m
+                [36m/>[39m
+              [36m</button>[39m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-(--ui-text-quaternary)"[39m
+            [36m>[39m
+              [0mModel[0m
+            [36m</span>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"min-w-0 truncate text-(--ui-text-secondary)"[39m
+            [36m>[39m
+              [36m<button[39m
+                [33maria-expanded[39m=[32m"false"[39m
+                [33maria-haspopup[39m=[32m"menu"[39m
+                [33mclass[39m=[32m"inline-flex shrink-0 cursor-pointer items-center rounded-[2.5px] whitespace-nowrap transition-all duration-100 outline-none focus-visible:border-ring focus-visible:ring-[0.1875rem] focus-visible:ring-ring/50 disabled:pointer-events-none dis...
+ ❯ Object.getElementError ../../node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ ../../node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ ../../node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ ❯ ../../node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ src/plugins/kanban/drawer.test.tsx:257:19
+    255|     // 4h de idade e 3m de tentativa, lado a lado e distinguiveis.
+    256|     expect(screen.getByText('4h')).toBeTruthy()
+    257|     expect(screen.getByText(/3m/)).toBeTruthy()
+       |                   ^
+    258|   })
+    259|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  2 failed | 1 passed (3)
+      Tests  5 failed | 57 passed (62)
+   Start at  12:28:26
+   Duration  26.32s (transform 10.20s, setup 1.75s, import 25.39s, tests 10.61s, environment 6.16s)
+
