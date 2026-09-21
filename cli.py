@@ -4182,6 +4182,33 @@ def _kanban_goal_loop_allowed(result) -> bool:
     return True
 
 
+def _stamp_preflight_turn_result(cli) -> None:
+    """Classify a credential/init AuthError onto ``_last_turn_result``.
+
+    ``chat()`` returns None without a turn dict when ``_ensure_runtime_credentials``
+    fails, which used to look like an empty response to the Ralph loop. The
+    dispatcher already maps ``failure_reason`` onto exit 75/78.
+    """
+    error = getattr(cli, "_last_runtime_error", None)
+    if error is None:
+        return
+    from hermes_cli.auth import is_rate_limited_auth_error
+
+    if is_rate_limited_auth_error(error):
+        reason = "rate_limit"
+    else:
+        from agent.error_classifier import classify_api_error
+
+        reason = classify_api_error(error).reason.value
+    cli._last_turn_result = {
+        "failed": True,
+        "completed": False,
+        "final_response": "",
+        "error": str(error),
+        "failure_reason": reason,
+    }
+
+
 def _run_quiet_single_query(cli, effective_query, emitter=None):
     """Quiet (-Q) one-shot turn: run, print the response (stderr for errors/session_id), then sys.exit with the automation exit code.
     With a ``StreamJsonEmitter`` the final answer and the exit line become the terminal ``result`` JSONL record instead.
@@ -4617,10 +4644,12 @@ def _run_single_query_mode(cli, query, image, quiet, oneshot, stream_json: bool 
                         emitter.attach(cli.agent)
                     _run_quiet_single_query(cli, effective_query, emitter=emitter)
 
+            _stamp_preflight_turn_result(cli)
+            _init_exit = _single_query_exit_code(getattr(cli, "_last_turn_result", None))
             if emitter is not None:
                 emitter.emit_result({"failed": True, "error": "credentials or agent init failed"},
-                                    session_id=cli.session_id or "", exit_code=1)
-            exit_single_query(1)  # credentials or agent init failed
+                                    session_id=cli.session_id or "", exit_code=_init_exit)
+            exit_single_query(_init_exit)  # credentials or agent init failed
         # No welcome banner (~420 ms cold); session id / resume hint come from _print_exit_summary().
         _query_label = query or ("[image attached]" if single_query_images else "")
         if _query_label:

@@ -47,6 +47,8 @@ class CLIChatTurnMixin:
         self._last_turn_interrupted = False
 
         if not self._ensure_runtime_credentials():
+            from cli import _stamp_preflight_turn_result
+            _stamp_preflight_turn_result(self)
             return None
 
         turn_route = self._resolve_turn_agent_config(message)

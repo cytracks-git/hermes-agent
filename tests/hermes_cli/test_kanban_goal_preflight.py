@@ -251,3 +251,22 @@ def test_anthropic_model_cooldown_auth_error_is_rate_limit_not_empty_response(mo
     assert err.code == "rate_limit"
     assert cli._single_query_exit_code(result) == KANBAN_RATE_LIMIT_EXIT_CODE
     assert cli._kanban_goal_loop_allowed(result) is False
+
+
+def test_credential_init_autherror_stamps_rate_limit_and_exits_75(monkeypatch):
+    """The live path: resolve_runtime_provider raises before any turn dict exists."""
+    from hermes_cli.auth import AuthError
+
+    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_abc")
+    monkeypatch.setenv("HERMES_KANBAN_GOAL_MODE", "1")
+    err = AuthError(
+        "Anthropic credentials are rate-limited for claude-opus-5; other Claude models remain available",
+        code="rate_limit",
+        retryable=True,
+    )
+    obj = SimpleNamespace(_last_runtime_error=err, _last_turn_result=None)
+    cli._stamp_preflight_turn_result(obj)
+    assert obj._last_turn_result["failure_reason"] == "rate_limit"
+    assert obj._last_turn_result["failed"] is True
+    assert cli._kanban_goal_loop_allowed(obj._last_turn_result) is False
+    assert cli._single_query_exit_code(obj._last_turn_result) == KANBAN_RATE_LIMIT_EXIT_CODE
