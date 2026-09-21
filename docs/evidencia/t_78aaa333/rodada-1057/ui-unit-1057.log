@@ -1,0 +1,15 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:37:20). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/work/apps/desktop[39m
+
+ [32m✓[39m [30m[45m ui [49m[39m src/plugins/kanban/completion-notify.test.ts [2m([22m[2m31 tests[22m[2m)[22m[32m 172[2mms[22m[39m
+ [32m✓[39m [30m[45m ui [49m[39m src/plugins/kanban/approval-panel.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[32m 145[2mms[22m[39m
+ [32m✓[39m [30m[45m ui [49m[39m src/plugins/kanban/drawer.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 251[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m39 passed[39m[22m[90m (39)[39m
+[2m   Start at [22m 22:31:02
+[2m   Duration [22m 6.97s[2m (transform 9.66s, setup 253ms, import 12.28s, tests 568ms, environment 1.01s)[22m
+

@@ -100,7 +100,13 @@ def _git_out(cwd: Path, *args: str, timeout: int = 30) -> Optional[str]:
 
 # --- Constants ---
 
-VALID_STATUSES = {"triage", "todo", "scheduled", "ready", "running", "blocked", "review", "done", "archived"}
+VALID_STATUSES = {
+    "triage", "todo", "scheduled", "ready", "running", "waiting_approval",
+    "blocked", "review", "done", "archived",
+}
+# ``waiting_approval`` fica de fora de propósito: nenhum card nasce esperando
+# aprovação — o estado só é alcançado por ``pause_for_approval`` a partir de
+# ``running`` (contrato t_78aaa333 §3.2 E-1).
 VALID_INITIAL_STATUSES = {"running", "blocked"}
 
 # Typed block reasons (routing in ``_route_block``); ``None`` = legacy un-typed.
@@ -1014,6 +1020,13 @@ CREATE TABLE IF NOT EXISTS task_runs (
     -- still be found and reaped; NULL = legacy row, never signalled.
     worker_started_at   INTEGER,
     max_runtime_seconds INTEGER,
+    -- Espera humana de aprovação, em segundos, acumulada ao retomar (contrato
+    -- t_78aaa333 §3.3 T-3): ``enforce_max_runtime`` a desconta do tempo decorrido,
+    -- senão a demora do H1 vira timeout do agente — a falha que a feature existe
+    -- para evitar. ``approval_paused_at`` é o instante da pausa em curso (NULL
+    -- fora dela); só vira segundos acumulados quando a retomada fecha a janela.
+    approval_wait_seconds INTEGER NOT NULL DEFAULT 0,
+    approval_paused_at  INTEGER,
     last_heartbeat_at   INTEGER,
     started_at          INTEGER NOT NULL,
     ended_at            INTEGER,
@@ -1068,6 +1081,13 @@ CREATE INDEX IF NOT EXISTS idx_links_child           ON task_links(child_id);
 CREATE INDEX IF NOT EXISTS idx_links_parent          ON task_links(parent_id);
 CREATE INDEX IF NOT EXISTS idx_comments_task         ON task_comments(task_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_task           ON task_events(task_id, created_at);
+-- Leitura por (card, kind) em ordem de id. Sem ela, "a ultima linha deste kind
+-- neste card" resolve com USE TEMP B-TREE FOR ORDER BY, que ordena TODOS os
+-- eventos do card a cada consulta -- medido em 0,603 ms contra 0,007 ms por
+-- leitura num card de 1.4 mil eventos (o tamanho do maior card do board real).
+-- E o caminho do diagnostico de aprovacao (kanban_approval_diagnostics), que e
+-- consultado a cada poll de uma espera humana.
+CREATE INDEX IF NOT EXISTS idx_events_task_kind      ON task_events(task_id, kind, id);
 CREATE INDEX IF NOT EXISTS idx_runs_task             ON task_runs(task_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_runs_status           ON task_runs(status);
 CREATE INDEX IF NOT EXISTS idx_attachments_task      ON task_attachments(task_id, created_at);
@@ -1507,6 +1527,7 @@ VALID_SORT_ORDERS: dict[str, str] = {
     "assignee": "assignee ASC, created_at ASC",
     "title": "title ASC, id ASC",
     "updated": "started_at DESC NULLS LAST, created_at DESC",
+    "completed-desc": "completed_at DESC NULLS LAST, id DESC",
 }
 
 
@@ -3072,17 +3093,49 @@ def _unique_attachment_path(directory: Path, filename: str, used: set[Path]) -> 
     return candidate
 
 
-def edit_completed_task_result(
-    conn: sqlite3.Connection, task_id: str, *, result: str, summary: Optional[str] = None,
-    metadata: Optional[dict] = None,
+def edit_task(
+    conn: sqlite3.Connection, task_id: str, *, title: Optional[str] = None,
+    body: Optional[str] = None, priority: Optional[int] = None,
+    result: Optional[str] = None, summary: Optional[str] = None,
+    metadata: Optional[dict] = None, board: Optional[str] = None,
 ) -> bool:
-    """Backfill the user-visible result for an already completed task."""
-    handoff_summary = summary if summary is not None else result
+    """Edit task fields, optionally backfilling a completed task's result."""
+    changed_fields = [
+        field for field, value in (("title", title), ("body", body), ("priority", priority))
+        if value is not None
+    ]
     with write_txn(conn):
-        if _task_status(conn, task_id) != "done":
+        status = _task_status(conn, task_id)
+        if status is None or (result is not None and status != "done"):
             return False
-        conn.execute("UPDATE tasks SET result = ? WHERE id = ?", (result, task_id))
-        run = conn.execute(
+        assignments = []
+        params = []
+        for field, value in (("title", title), ("body", body), ("priority", priority)):
+            if value is not None:
+                assignments.append(f"{field} = ?")
+                params.append(value)
+        if result is not None:
+            assignments.append("result = ?")
+            params.append(result)
+            changed_fields.append("result")
+        if not assignments:
+            return False
+        conn.execute(
+            f"UPDATE tasks SET {', '.join(assignments)} WHERE id = ?",
+            (*params, task_id),
+        )
+        if priority is not None:
+            _append_event(conn, task_id, "reprioritized", {"priority": priority})
+        if result is None:
+            non_priority_fields = [field for field in changed_fields if field != "priority"]
+            if non_priority_fields:
+                _append_event(conn, task_id, "edited", {"fields": non_priority_fields})
+        else:
+            handoff_summary = summary if summary is not None else result
+            changed_fields.append("summary")
+            if metadata is not None:
+                changed_fields.append("metadata")
+            run = conn.execute(
             """
             SELECT id FROM task_runs
              WHERE task_id = ?
@@ -3092,27 +3145,28 @@ def edit_completed_task_result(
             """,
             (task_id,),
         ).fetchone()
-        if run is None:
-            run_id = _synthesize_ended_run(
-                conn, task_id, outcome="completed", summary=handoff_summary, metadata=metadata,
-            )
-        else:
-            run_id = int(run["id"])
-            conn.execute("UPDATE task_runs SET summary = ? WHERE id = ?", (handoff_summary, run_id))
-            if metadata is not None:
-                conn.execute(
-                    "UPDATE task_runs SET metadata = ? WHERE id = ?",
-                    (json.dumps(metadata, ensure_ascii=False), run_id),
+            if run is None:
+                run_id = _synthesize_ended_run(
+                    conn, task_id, outcome="completed", summary=handoff_summary, metadata=metadata,
                 )
-        _append_event(
-            conn, task_id, "edited",
-            {
-                "fields": ["result", "summary"] + (["metadata"] if metadata is not None else []),
-                "result_len": len(result) if result else 0,
-                "summary": _first_line(handoff_summary, 400) or None,
-            },
-            run_id=run_id,
-        )
+            else:
+                run_id = int(run["id"])
+                conn.execute("UPDATE task_runs SET summary = ? WHERE id = ?", (handoff_summary, run_id))
+                if metadata is not None:
+                    conn.execute(
+                        "UPDATE task_runs SET metadata = ? WHERE id = ?",
+                        (json.dumps(metadata, ensure_ascii=False), run_id),
+                    )
+            _append_event(
+                conn, task_id, "edited",
+                {
+                    "fields": ["result", "summary"] + (["metadata"] if metadata is not None else []),
+                    "result_len": len(result) if result else 0,
+                    "summary": _first_line(handoff_summary, 400) or None,
+                },
+                run_id=run_id,
+            )
+    notify_task_updated(conn, task_id, changed_fields, board=board)
     return True
 
 
@@ -3125,7 +3179,15 @@ def block_task(
     re-kinded to ``needs_input`` (sticky) so ``recompute_ready`` cannot
     promote it into a context-free respawn. ``transient`` still counts
     toward the loop breaker so a forever-flaky task escalates. True on any
-    transition."""
+    transition.
+
+    An already-``blocked`` card that the failure breaker parked UNTYPED
+    (``block_kind IS NULL``, no live run) is classified in place when *kind*
+    is supplied: ``block_kind``/``block_recurrences`` are set and a ``blocked``
+    audit event is appended, while status, failure evidence and the terminal
+    runs stay exactly as the breaker left them. A typed block, a card with a
+    live run, or a kind-less call on a blocked card are still refused.
+    """
     if kind is not None and kind not in VALID_BLOCK_KINDS:
         raise ValueError(f"block kind must be one of {sorted(VALID_BLOCK_KINDS)} or None")
     with write_txn(conn):
@@ -3134,6 +3196,28 @@ def block_task(
         ).fetchone()
         if cur_row is None:
             return False
+        # The breaker (``_record_task_failure``) parks cards ``blocked`` with no
+        # ``block_kind`` and no ``blocked`` event -- the policy is the
+        # supervisor's, not the kernel's -- but the transition guard below only
+        # matches running/ready, so that policy could never be attached later
+        # (#117363). Classify in place; never re-type or flap status. A caller
+        # asserting run ownership (``expected_run_id``) cannot own a parked
+        # card -- its run is over -- so it is refused like any stale worker.
+        if cur_row["status"] == "blocked":
+            if kind is None or expected_run_id is not None or _row_get(cur_row, "block_kind") is not None:
+                return False
+            classified = conn.execute(
+                "UPDATE tasks SET block_kind = ?, block_recurrences = 1 "
+                "WHERE id = ? AND status = 'blocked' AND block_kind IS NULL "
+                "AND current_run_id IS NULL",
+                (kind, task_id),
+            ).rowcount
+            if classified != 1:
+                return False
+            _append_event(conn, task_id, "blocked", {
+                "kind": kind, "reason": reason, "classified_in_place": True,
+            })
+            return True
         source_status = _retry_status_for_run(conn, task_id) if cur_row["status"] == "running" else "ready"
         requested_kind = kind
         rekind_reason = None
@@ -3279,7 +3363,6 @@ def request_review(
                     "(worker ownership) or force=True (explicit operator "
                     "override) instead of clearing the live run's claim",
                 )
-            implementer = trow["assignee"]
             if reviewer is None:
                 reviewer = _prior_reviewer(conn, task_id)
                 if reviewer is False:
@@ -3289,6 +3372,23 @@ def request_review(
                         "malformed); pass reviewer= explicitly",
                     )
             reviewer = _canonical_assignee(reviewer)
+            # The actor is the run that did the work. ``assignee`` is the actor
+            # only while a worker holds the card; on a never-claimed card it is
+            # whoever the operator assigned -- possibly the reviewer itself,
+            # which is what ``kanban create --assignee <reviewer>`` followed by
+            # ``request-review`` produces. Recording the reviewer as its own
+            # implementer is worse than recording nothing: request_changes()
+            # routes on this field, and it already refuses a handoff that
+            # carries no implementer provenance.
+            implementer = None
+            if trow["current_run_id"] is not None:
+                arow = conn.execute(
+                    "SELECT profile FROM task_runs WHERE id = ?",
+                    (trow["current_run_id"],),
+                ).fetchone()
+                implementer = arow["profile"] if arow else None
+            if implementer is None and trow["assignee"] != reviewer:
+                implementer = trow["assignee"]
             assignee_sql = ", assignee = ?" if reviewer is not None else ""
             run_guard = "" if expected_run_id is None else " AND current_run_id = ?"
             params: tuple[Any, ...] = (
@@ -3840,6 +3940,214 @@ def schedule_task(
             conn, task_id, outcome="scheduled", status="scheduled", summary=reason, synthesize=bool(reason),
         )
         _append_event(conn, task_id, "scheduled", {"reason": reason}, run_id=run_id)
+        return True
+
+
+# --- Espera humana de aprovação (contrato t_78aaa333 §3.2/§4) ---
+#
+# O estado ``waiting_approval`` existe porque ``blocked`` conta recorrência e
+# escala para ``triage`` (``_route_block``), e ``scheduled`` mente sobre a natureza
+# da espera. Nenhuma das cinco varreduras de reciclagem do dispatcher alcança este
+# estado: todas filtram ``status='running'``. A entrada libera claim e vaga; a saída
+# é exclusiva destas funções — verbo genérico (drag/PATCH/bulk) é recusado em
+# ``_set_status_direct``/``_apply_status``.
+
+APPROVAL_EXIT_EVENTS = {
+    "denied": "approval_denied",
+    "cancelled": "approval_cancelled",
+    "obsolete": "approval_obsolete",
+    "orphaned": "approval_orphaned",
+}
+
+
+def pause_for_approval(
+    conn: sqlite3.Connection, task_id: str, *, request_id: str, request_hash: str,
+    expected_run_id: int, targets: Optional[list[str]] = None,
+) -> bool:
+    """``running`` -> ``waiting_approval`` enquanto o humano decide (E-3).
+
+    Zera claim/PID/heartbeat de propósito: o orçamento do dispatcher conta
+    ``status='running'``, então a espera humana não ocupa vaga. A identidade zerada
+    aqui sobrevive na própria ``approval_request`` (R-0.3) e é de lá que
+    :func:`resume_from_pause` a restaura.
+
+    **O run NÃO é encerrado** (E-3.1): o worker não morreu — está bloqueado numa
+    chamada de ferramenta. Fechar o run criaria uma tentativa fantasma e habilitaria
+    ``reap_terminal_workers``, que mataria em 2 min o próprio processo que espera.
+    Nada de ``consecutive_failures`` / ``block_kind`` / ``block_recurrences``: demora
+    humana não é falha.
+    """
+    now = int(time.time())
+    with write_txn(conn, allow_nested=True):
+        cur = conn.execute(
+            """
+            UPDATE tasks
+               SET status            = 'waiting_approval',
+                   claim_lock        = NULL,
+                   claim_expires     = NULL,
+                   worker_pid        = NULL,
+                   worker_started_at = NULL,
+                   last_heartbeat_at = NULL
+             WHERE id = ?
+               AND status = 'running'
+               AND current_run_id = ?
+            """,
+            (task_id, int(expected_run_id)),
+        )
+        if cur.rowcount != 1:
+            return False
+        # Abre a janela de espera: o tempo daqui até a retomada não conta para
+        # ``max_runtime_seconds`` (T-3), senão a demora do humano vira timeout do agente.
+        conn.execute(
+            "UPDATE task_runs SET approval_paused_at = ? WHERE id = ? AND ended_at IS NULL",
+            (now, int(expected_run_id)),
+        )
+        _append_event(
+            conn, task_id, "approval_requested",
+            {"request_id": request_id, "request_hash": request_hash,
+             "targets": list(targets or [])},
+            run_id=int(expected_run_id),
+        )
+        return True
+
+
+def resume_from_pause(
+    conn: sqlite3.Connection, task_id: str, *, request_id: str, claim_lock: str,
+    worker_pid: int, worker_started_at: Any, expected_run_id: int,
+    ttl_seconds: Optional[int] = None,
+) -> bool:
+    """``waiting_approval`` -> ``running`` restaurando a identidade no MESMO CAS (E-9).
+
+    Um UPDATE, não dois: uma linha ``running`` com ``claim_lock`` NULL é exatamente o
+    predicado de ``reconcile_orphaned_running``, que a promoveria a ``ready`` e faria o
+    dispatcher spawnar um SEGUNDO worker LLM ao lado do primeiro — a regeneração que
+    R-3 proíbe. Não existe instante intermediário porque status e identidade mudam na
+    mesma sentença.
+
+    A identidade não é recalculada, é **restaurada** da ``approval_request``: o
+    processo é literalmente o mesmo, então o fingerprint continua válido contra
+    reciclagem de PID. ``claim_expires`` é renovado (o TTL antigo venceu durante a
+    espera; herdá-lo entregaria a task a ``release_stale_claims`` no tick seguinte).
+    A partir daqui o regime de stale volta a valer, e deve: a task só sai dele
+    enquanto o humano decide, nunca depois.
+
+    ``False`` quando o CAS perde — alguém tirou o card da espera por outro caminho.
+    O chamador NÃO escreve (fail-closed); a request fica ``consumed`` com
+    ``applied_at IS NULL`` e a varredura de órfãs a trata.
+    """
+    now = int(time.time())
+    expires = now + _resolve_claim_ttl_seconds(ttl_seconds)
+    with write_txn(conn, allow_nested=True):
+        cur = conn.execute(
+            """
+            UPDATE tasks
+               SET status            = 'running',
+                   claim_lock        = ?,
+                   claim_expires     = ?,
+                   worker_pid        = ?,
+                   worker_started_at = ?,
+                   last_heartbeat_at = ?
+             WHERE id = ?
+               AND status = 'waiting_approval'
+               AND current_run_id = ?
+            """,
+            (claim_lock, expires, int(worker_pid), worker_started_at, now, task_id,
+             int(expected_run_id)),
+        )
+        if cur.rowcount != 1:
+            return False
+        _close_approval_wait_window(conn, int(expected_run_id), now)
+        _append_event(
+            conn, task_id, "approval_resumed", {"request_id": request_id},
+            run_id=int(expected_run_id),
+        )
+        return True
+
+
+def _close_approval_wait_window(conn: sqlite3.Connection, run_id: int, now: int) -> None:
+    """Acumula a janela de espera em ``approval_wait_seconds`` e fecha-a.
+
+    ``enforce_max_runtime`` desconta esse total, então o relógio do agente ignora o
+    tempo em que ele esteve parado esperando um humano (T-3/C-30). Idempotente: sem
+    janela aberta (``approval_paused_at IS NULL``) o UPDATE não alcança linha nenhuma.
+    """
+    conn.execute(
+        "UPDATE task_runs "
+        "   SET approval_wait_seconds = COALESCE(approval_wait_seconds, 0) "
+        "                               + MAX(0, ? - approval_paused_at), "
+        "       approval_paused_at = NULL "
+        " WHERE id = ? AND approval_paused_at IS NOT NULL",
+        (now, int(run_id)),
+    )
+
+
+def end_approval_wait(
+    conn: sqlite3.Connection, task_id: str, *, request_id: str, outcome: str,
+    reason: Optional[str] = None, expected_run_id: Optional[int] = None,
+) -> bool:
+    """``waiting_approval`` -> ``blocked`` (kind ``needs_input``) sem escrita (E-4).
+
+    Os quatro desfechos sem retomada — ``denied``, ``cancelled``, ``obsolete``
+    (preimagem mudou) e ``orphaned`` (o worker morreu sem aplicar) — param no mesmo
+    lugar: um humano precisa olhar. Nunca ``ready``: promover aqui respawnaria um
+    worker que regeneraria a operação.
+
+    ``denied`` conta recorrência de propósito (deny repetido é sinal humano, e o
+    escalonamento para ``triage`` é o comportamento desejado); os outros três não são
+    decisão do humano sobre o mérito e não devem escalar o card.
+
+    Não é caminho genérico: só é alcançável pelo endpoint de decisão e pela varredura
+    de órfãs, ambos portando o ``request_id``.
+    """
+    if outcome not in APPROVAL_EXIT_EVENTS:
+        raise ValueError(f"outcome must be one of {sorted(APPROVAL_EXIT_EVENTS)}, got {outcome!r}")
+    now = int(time.time())
+    with write_txn(conn, allow_nested=True):
+        row = conn.execute(
+            "SELECT current_run_id, block_kind, block_recurrences FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        run_id = _opt_int(row["current_run_id"])
+        if expected_run_id is not None and run_id != int(expected_run_id):
+            return False
+        if outcome == "denied":
+            recurrences = (
+                int(_row_get(row, "block_recurrences") or 0) + 1
+                if _row_get(row, "block_kind") == "needs_input" else 1
+            )
+        else:
+            recurrences = int(_row_get(row, "block_recurrences") or 0)
+        cur = conn.execute(
+            """
+            UPDATE tasks
+               SET status            = 'blocked',
+                   block_kind        = 'needs_input',
+                   block_recurrences = ?,
+                   claim_lock        = NULL,
+                   claim_expires     = NULL,
+                   worker_pid        = NULL,
+                   worker_started_at = NULL,
+                   last_heartbeat_at = NULL
+             WHERE id = ? AND status = 'waiting_approval'
+            """,
+            (recurrences, task_id),
+        )
+        if cur.rowcount != 1:
+            return False
+        if run_id is not None:
+            _close_approval_wait_window(conn, run_id, now)
+        # A tentativa termina aqui: o worker que esperava não vai mais escrever.
+        ended_run_id = _end_run(
+            conn, task_id, outcome="blocked", status="blocked",
+            summary=reason or f"approval {outcome}",
+        )
+        _append_event(
+            conn, task_id, APPROVAL_EXIT_EVENTS[outcome],
+            {"request_id": request_id, "reason": reason, "kind": "needs_input"},
+            run_id=ended_run_id if ended_run_id is not None else run_id,
+        )
         return True
 
 

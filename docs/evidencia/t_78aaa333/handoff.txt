@@ -1,0 +1,15 @@
+t_78aaa333 — handoff parcial, sem correção instalada
+
+Causa reproduzida em Docker não-root: callback CLI aguarda modal com UI=None; request_id ausente. A guarda continua bloqueando; nenhum AGENTS/SOUL real foi escrito.
+
+Lab reconstruído de git archive HEAD:
+79 tests passed, 0 failed — controles existentes, 7.3s.
+1 failed: AssertionError: timeout — regressão headless, 2.4s (RED esperado).
+
+H1 aprovou coluna Waiting approval, contador, aviso na origem e decisão humana persistente sem ocupar worker. Falta congelar com orquestrador/CISO o contrato de autoria humana e operação exata antes da alteração estrutural. Estimativa NÃO medida: 16–32h; risco alto. OAuth apenas; custo financeiro indisponível.
+
+Relatório completo, logs e rascunho congelado estão no worktree persistente:
+/Users/farantes/atlas/wt/kanban-aprovacao-interativa/docs/evidencia/t_78aaa333/
+Leia diagnostico-e-recorte.md. O rascunho síncrono é incompleto e NÃO deve ser integrado.
+
+O anexo 145 diagnostico-e-recorte.md.gz falhou no gzip -t: cópia corrompida, NÃO usar. Este handoff substitui esse anexo; o relatório original no worktree está íntegro. Sem rollout ou reinício. Prova humana real continua pendente.

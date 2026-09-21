@@ -48,6 +48,7 @@ import {
   uploadAttachment
 } from './api'
 import { ModelOverrideField, overridePatch } from './model-override'
+import { ApprovalPanel } from './approval-panel'
 import {
   type Diagnostic,
   type DiagnosticAction,
@@ -1008,6 +1009,8 @@ export function TaskDrawer({
             )}
 
             <DescriptionSection body={task.body} onSave={body => void mutate(() => patchTask(task.id, { body }))()} />
+
+            <ApprovalPanel key={`${slug}:${task.id}`} taskId={task.id} waiting={task.status === 'waiting_approval'} />
 
             <EstimateSection id={task.id} />
 

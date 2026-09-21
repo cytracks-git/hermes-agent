@@ -1,0 +1,11 @@
+# Alvos do recorte 1057/1058 (diagnostico contextual), card t_78aaa333.
+#
+# Ficam a parte dos alvos-comuns.txt pelo mesmo motivo de alvos-novos.txt: um
+# arquivo de teste que nasce com a implementacao nao tem contraparte no
+# baseline, e inclui-lo na lista comum criaria uma diferenca artificial.
+tests/hermes_cli/test_kanban_approval_diagnostics.py
+tests/tools/test_file_approval_worker.py
+tests/plugins/test_kanban_file_approval_api.py
+tests/tui_gateway/test_kanban_notify_poller.py
+tests/gateway/test_kanban_notice_copy.py
+tests/hermes_cli/test_kanban_approval_wait.py

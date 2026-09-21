@@ -1,0 +1,30 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python3
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: not a git repository (or any parent up to mount point /)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+▶ launching test runner
+Discovered 6 test files (~61 tests) under ['tests/hermes_cli/test_kanban_approval_diagnostics.py', 'tests/tools/test_file_approval_worker.py', 'tests/plugins/test_kanban_file_approval_api.py', 'tests/tui_gateway/test_kanban_notify_poller.py', 'tests/gateway/test_kanban_notice_copy.py', 'tests/hermes_cli/test_kanban_approval_wait.py']; running with -j 28
+[  4.9% |     3/~61 | ✓3 | ✗0] ✓ tests/gateway/test_kanban_notice_copy.py (3✓, 3.9s)
+[  8.2% |     5/~61 | ✓7 | ✗0] ✓ tests/plugins/test_kanban_file_approval_api.py (4✓, 5.0s)
+[ 27.9% |    17/~61 | ✓19 | ✗ 0] ✓ tests/hermes_cli/test_kanban_approval_diagnostics.py (12✓, 6.4s)
+[ 52.5% |    32/~61 | ✓34 | ✗ 0] ✓ tests/tui_gateway/test_kanban_notify_poller.py (15✓, 8.5s)
+[ 93.4% |    57/~61 | ✓62 | ✗ 0] ✓ tests/hermes_cli/test_kanban_approval_wait.py (28✓, 14.2s)
+[100.0% |    61/~61 | ✓87 | ✗ 0] ✓ tests/tools/test_file_approval_worker.py (25✓, 41.0s)
+
+=== Summary: 6 files, 87 tests passed, 0 failed (100% complete) in 41.1s (28 workers) ===
+  Durations cached to test_durations.json (6 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   6
+  Total subprocess CPU-wall: 79.1s  (runner wall: 41.1s, parallelism: 28x)
+  P50: 8.50s  P90: 41.05s  P95: 41.05s  P99: 41.05s  Max: 41.05s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+     41.05s  tests/tools/test_file_approval_worker.py
+     14.23s  tests/hermes_cli/test_kanban_approval_wait.py
+      8.50s  tests/tui_gateway/test_kanban_notify_poller.py
+      6.41s  tests/hermes_cli/test_kanban_approval_diagnostics.py
+      5.04s  tests/plugins/test_kanban_file_approval_api.py
+      3.87s  tests/gateway/test_kanban_notice_copy.py

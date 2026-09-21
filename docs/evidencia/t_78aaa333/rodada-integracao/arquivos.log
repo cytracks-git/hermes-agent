@@ -1,0 +1,30 @@
+▶ skipping venv without pytest: /tmp/work/.venv
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python3
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: not a git repository: /Users/farantes/.hermes/hermes-agent/.git/worktrees/kanban-aprovacao-interativa
+▶ launching test runner
+Discovered 5 test files (~157 tests) under ['tests/tools/test_file_approval_worker.py', 'tests/tools/test_file_write_safety.py', 'tests/tools/test_file_operations.py', 'tests/plugins/test_kanban_file_approval_api.py', 'tests/hermes_cli/test_kanban_approval_wait.py']; running with -j 28
+[ 43.9% |    69/~157 | ✓71 | ✗ 0] ✓ tests/tools/test_file_operations.py (71✓ 2s, 1.3s)
+[ 44.6% |    70/~157 | ✓74 | ✗ 0] ✓ tests/plugins/test_kanban_file_approval_api.py (3✓, 1.9s)
+[ 82.8% |   130/~157 | ✓137 | ✗  0] ✓ tests/tools/test_file_write_safety.py (63✓, 3.9s)
+[ 98.7% |   155/~157 | ✓165 | ✗  0] ✓ tests/hermes_cli/test_kanban_approval_wait.py (28✓, 10.0s)
+[100.0% |   157/~157 | ✓180 | ✗  0] ✓ tests/tools/test_file_approval_worker.py (15✓, 20.1s)
+
+=== Summary: 5 files, 180 tests passed, 0 failed, 2 skipped (100% complete) in 20.1s (28 workers) ===
+
+  note: windows_only tests (in 1 file) were SKIPPED on this host (linux); they run on the tests-os CI lane (windows-latest).
+  Durations cached to test_durations.json (5 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   5
+  Total subprocess CPU-wall: 37.2s  (runner wall: 20.1s, parallelism: 28x)
+  P50: 3.87s  P90: 20.06s  P95: 20.06s  P99: 20.06s  Max: 20.06s
+  <1s: 0 files (0%)  <2s: 2 files (40%)
+  Top 10 slowest:
+     20.06s  tests/tools/test_file_approval_worker.py
+     10.01s  tests/hermes_cli/test_kanban_approval_wait.py
+      3.87s  tests/tools/test_file_write_safety.py
+      1.92s  tests/plugins/test_kanban_file_approval_api.py
+      1.28s  tests/tools/test_file_operations.py

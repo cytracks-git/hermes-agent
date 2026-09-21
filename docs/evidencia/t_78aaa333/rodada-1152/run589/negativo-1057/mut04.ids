@@ -1,0 +1,2 @@
+tests/hermes_cli/test_kanban_approval_diagnostics.py::test_a_human_retry_reopens_the_notice_budget_without_deciding
+tests/hermes_cli/test_kanban_approval_diagnostics.py::test_notice_budget_is_durable_per_transport_generation

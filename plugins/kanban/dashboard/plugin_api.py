@@ -166,7 +166,10 @@ def _errors_to_500(prefix: str) -> Iterator[None]:
 
 # Dashboard columns, left-to-right ("archived" is a filter toggle, not a column). Keep in
 # sync with kanban_db.VALID_STATUSES — a status missing here gets mis-bucketed into ``todo``.
-BOARD_COLUMNS: list[str] = ["triage", "todo", "scheduled", "ready", "running", "blocked", "review", "done"]
+BOARD_COLUMNS: list[str] = [
+    "triage", "todo", "scheduled", "ready", "running", "waiting_approval",
+    "blocked", "review", "done",
+]
 
 _CARD_SUMMARY_PREVIEW_CHARS = 200
 
@@ -306,12 +309,19 @@ def get_board(
             _attach_diagnostics(d, diagnostics_per_task.get(t.id))
             columns[t.status if t.status in columns else "todo"].append(d)
 
-        # Per-column ordering (priority DESC, created_at ASC) comes from list_tasks.
+        # Queue lanes keep the list_tasks dispatch order; the done column is
+        # history, so order it newest-completed-first. Two stable sorts compose
+        # into the "completed_at DESC NULLS LAST, id DESC" SQL key.
+        columns["done"].sort(key=lambda d: d["id"], reverse=True)
+        columns["done"].sort(key=lambda d: (d["completed_at"] is None, -(d["completed_at"] or 0)))
+
+        # Queue columns keep list_tasks' dispatch order (priority DESC, created_at ASC).
         tenants = [r["tenant"] for r in conn.execute("SELECT DISTINCT tenant FROM tasks WHERE tenant IS NOT NULL ORDER BY tenant")]
         assignees = [r["assignee"] for r in conn.execute(
             "SELECT DISTINCT assignee FROM tasks WHERE assignee IS NOT NULL AND status != 'archived' ORDER BY assignee")]
         return {
             "columns": [{"name": name, "tasks": columns[name]} for name in columns], "tenants": tenants,
+            "pending_approvals": conn.execute("SELECT COUNT(*) FROM approval_requests WHERE state='pending'").fetchone()[0],
             "assignees": assignees, "latest_event_id": int(latest_event_id), "now": int(time.time())}
 
 
@@ -532,6 +542,20 @@ class _StatusRejected(Exception):
 
 _RUNNING_DIRECT_MSG = "Cannot set status to 'running' directly; use the dispatcher/claim path"
 
+# Um card em ``waiting_approval`` só sai pela decisão humana (endpoint próprio) ou
+# pela varredura de órfãs. Arrastar/PATCH/bulk sairia da espera sem consumir o grant
+# — a aprovação viraria um booleano que qualquer verbo genérico marca (contrato E-8).
+_WAITING_APPROVAL_ORIGIN_MSG = (
+    "Cannot move a card out of 'Waiting approval' from here; answer the approval "
+    "request on the card (Approve / Deny) instead")
+
+# Entrar na espera e coisa distinta de sair dela, e a mensagem tem de dizer qual das
+# duas o operador tentou. A recusa generica ("unknown status") mentiria: o estado E
+# valido, so nao e um destino que a UI alcance.
+_WAITING_APPROVAL_DESTINATION_MSG = (
+    "Cannot set status to 'Waiting approval' directly; a card enters that state only "
+    "when a worker asks for approval")
+
 
 def _drag_to(conn, task_id: str, s: str) -> bool:
     """Drag-drop into ready/todo/triage: blocked/scheduled -> ready re-opens via ``unblock_task``;
@@ -562,9 +586,20 @@ _STATUS_HANDLERS: dict[str, Any] = {
 
 def _apply_status(conn, task_id: str, s: str, p, unknown_detail: str) -> bool:
     """Dispatch a status verb; raises ``_StatusRejected`` (user-facing message)
-    for ``running`` or an unknown status (``unknown_detail``)."""
+    for ``running``, for a card currently parked in ``waiting_approval``, or an
+    unknown status (``unknown_detail``)."""
     if s == "running":
         raise _StatusRejected(_RUNNING_DIRECT_MSG)
+    if s == "waiting_approval":
+        # Não é destino atingível por verbo genérico: só ``pause_for_approval``,
+        # que exige uma approval_request criada pela guarda protegida.
+        raise _StatusRejected(_WAITING_APPROVAL_DESTINATION_MSG)
+    # Guarda de ORIGEM (camada 2; a camada 1 é a cláusula no UPDATE de
+    # ``_set_status_direct``). Vale para PATCH /tasks/{id} e POST /tasks/bulk, que
+    # compartilham este dispatch.
+    current = kanban_db.get_task(conn, task_id)
+    if current is not None and current.status == "waiting_approval":
+        raise _StatusRejected(_WAITING_APPROVAL_ORIGIN_MSG)
     handler = _STATUS_HANDLERS.get(s)
     if handler is None:
         raise _StatusRejected(unknown_detail)
@@ -572,13 +607,7 @@ def _apply_status(conn, task_id: str, s: str, p, unknown_detail: str) -> bool:
 
 
 def _set_priority(conn, task_id: str, priority: int, board: Optional[str]) -> None:
-    with kanban_db.write_txn(conn):
-        conn.execute("UPDATE tasks SET priority = ? WHERE id = ?", (int(priority), task_id))
-        conn.execute(
-            "INSERT INTO task_events (task_id, kind, payload, created_at) VALUES (?, 'reprioritized', ?, ?)",
-            (task_id, json.dumps({"priority": int(priority)}), int(time.time())))
-    # Mutation-boundary observer (post-commit): this direct-SQL write bypasses every kanban_db mutator.
-    kanban_db.notify_task_updated(conn, task_id, ("priority",), board=board)
+    kanban_db.edit_task(conn, task_id, priority=int(priority), board=board)
 
 
 def _apply_model_override(conn, task_id: str, p) -> bool:
@@ -703,7 +732,17 @@ def _parents_blocking_ready(conn: sqlite3.Connection, task_id: str) -> list:
 def _set_status_direct(conn: sqlite3.Connection, task_id: str, new_status: str) -> bool:
     """Direct status write for drag-drop moves without a structured verb (todo<->ready,
     running<->ready) + a ``status`` event. Leaving ``running`` closes the run as 'reclaimed'
-    so attempt history isn't orphaned; the worker is killed only AFTER the txn commits."""
+    so attempt history isn't orphaned; the worker is killed only AFTER the txn commits.
+
+    ``AND status != 'waiting_approval'`` is the origin guard (contrato E-8, camada 1):
+    a card parked on a human approval only leaves that state through the decision
+    endpoint or the orphan sweep, never through a drag.
+
+    ``_apply_status`` refuses the same origin BEFORE the txn (camada 2) with an
+    actionable message, and that is the layer users hit — but it reads the status and
+    only then calls this handler, so a pause landing in between would slip through.
+    This clause is inside the write txn and is the only race-free one; camada 2 exists
+    for the message, camada 1 for the guarantee."""
     terminations: list[tuple[Optional[int], Optional[str], Optional[int]]] = []
     effective_status = new_status
     with kanban_db.write_txn(conn):
@@ -727,7 +766,7 @@ def _set_status_direct(conn: sqlite3.Connection, task_id: str, new_status: str) 
             "  claim_lock = CASE WHEN ? = 'running' THEN claim_lock ELSE NULL END, "
             "  claim_expires = CASE WHEN ? = 'running' THEN claim_expires ELSE NULL END, "
             "  worker_pid = CASE WHEN ? = 'running' THEN worker_pid ELSE NULL END "
-            "WHERE id = ?",
+            "WHERE id = ? AND status != 'waiting_approval'",
             (effective_status,) * 4 + (task_id,))
         if cur.rowcount != 1:
             return False
@@ -1749,3 +1788,8 @@ async def stream_events(ws: WebSocket):
             pass
     finally:
         await tail.shutdown()
+
+
+from plugins.kanban.dashboard.approval_api import create_approval_router
+
+router.include_router(create_approval_router(_board_conn))

@@ -16,6 +16,9 @@
   if (!SDK) return;
 
   const { React } = SDK;
+  const approvalModule = new URL("approvals.js", document.currentScript.src).href;
+  const ApprovalPanel = React.lazy(() => import(approvalModule)
+    .then(module => ({ default: module.createApprovalPanel(SDK) })));
   const h = React.createElement;
   const {
     Card, CardContent,
@@ -96,6 +99,7 @@
     todo: "Todo",
     ready: "Ready",
     running: "In Progress",
+    waiting_approval: "Waiting for approval",
     blocked: "Blocked",
     review: "Review",
     done: "Done",
@@ -106,6 +110,7 @@
     todo: "Waiting on dependencies or unassigned",
     ready: "Dependencies satisfied; assign a profile to dispatch",
     running: "Claimed by a worker — in-flight",
+    waiting_approval: "Waiting for a human decision; no dispatch slot is held",
     blocked: "Worker asked for human input",
     review: "Implementation complete — awaiting review",
     done: "Completed",
@@ -468,15 +473,44 @@
 
   function attachTouchDrag(el, taskId) {
     if (!el) return;
+    // A finger drifts a few px on every real tap; without a movement threshold ANY touch
+    // pointerdown armed a drag and called preventDefault(), which suppresses the synthesized
+    // click the card relies on to open (#115568). Defer the drag proxy + preventDefault until
+    // the pointer has actually moved past DRAG_THRESHOLD_PX; a tap that never crosses it falls
+    // through to the native click, same as it already does for a mouse.
+    const DRAG_THRESHOLD_PX = 8;
     function onDown(e) {
       if (e.pointerType !== "touch") return;
-      e.preventDefault();
-      const proxy = el.cloneNode(true);
-      proxy.classList.add("hermes-kanban-touch-proxy");
-      document.body.appendChild(proxy);
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let proxy = null;
       let lastTarget = null;
+      let dragging = false;
+
+      function startDrag() {
+        dragging = true;
+        proxy = el.cloneNode(true);
+        proxy.classList.add("hermes-kanban-touch-proxy");
+        document.body.appendChild(proxy);
+        proxy.style.position = "fixed";
+        proxy.style.pointerEvents = "none";
+        proxy.style.opacity = "0.85";
+        proxy.style.zIndex = "9999";
+        proxy.style.width = `${el.offsetWidth}px`;
+        proxy.style.left = `${startX - el.offsetWidth / 2}px`;
+        proxy.style.top = `${startY - 24}px`;
+      }
 
       function move(ev) {
+        if (!dragging) {
+          const dx = ev.clientX - startX;
+          const dy = ev.clientY - startY;
+          if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+          startDrag();
+        }
+        // Only now, once a drag is actually underway, does it claim the gesture — a stationary
+        // tap never reaches preventDefault() and its click event fires normally.
+        ev.preventDefault();
         proxy.style.left = `${ev.clientX - proxy.offsetWidth / 2}px`;
         proxy.style.top = `${ev.clientY - 24}px`;
         proxy.style.display = "none";
@@ -495,6 +529,7 @@
         document.removeEventListener("pointermove", move);
         document.removeEventListener("pointerup", up);
         document.removeEventListener("pointercancel", up);
+        if (!dragging) return;
         if (lastTarget) {
           lastTarget.classList.remove("hermes-kanban-column--drop");
           const status = lastTarget.getAttribute("data-kanban-column");
@@ -513,14 +548,6 @@
         }
         proxy.remove();
       }
-      // Kick off proxy at the pointer origin.
-      proxy.style.position = "fixed";
-      proxy.style.pointerEvents = "none";
-      proxy.style.opacity = "0.85";
-      proxy.style.zIndex = "9999";
-      proxy.style.width = `${el.offsetWidth}px`;
-      proxy.style.left = `${e.clientX - el.offsetWidth / 2}px`;
-      proxy.style.top = `${e.clientY - 24}px`;
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", up);
       document.addEventListener("pointercancel", up);
@@ -2523,6 +2550,8 @@
     const tenants = (props.board && props.board.tenants) || [];
     const assignees = (props.board && props.board.assignees) || [];
     return h("div", { className: "flex flex-wrap items-end gap-3" },
+      props.board && props.board.pending_approvals !== undefined &&
+        h("span", { role: "status" }, `Pending approvals: ${props.board.pending_approvals}`),
       h("div", { className: "flex flex-col gap-1",
                  title: "Fuzzy-match tasks by id, title, or description. Matches across all columns." },
         h(Label, { className: "text-xs text-muted-foreground" }, tx(t, "search", "Search")),
@@ -3810,6 +3839,7 @@
           homeBusy: homeBusy,
           onToggleHomeSub: toggleHomeSubscription,
           onRefresh: props.onRefresh,
+          onApprovalRefresh: function () { load(); props.onRefresh(); },
           onUpload: handleUpload,
           onDeleteAttachment: handleDeleteAttachment,
           uploadBusy: uploadBusy,
@@ -4018,7 +4048,7 @@
         }) : null,
         t.created_by ? h(MetaRow, { label: tx(i18n, "createdBy", "Created by"), value: t.created_by }) : null,
       ),
-      h(StatusActions, {
+      t.status !== "waiting_approval" && h(StatusActions, {
         task: t,
         onPatch: props.onPatch,
         onSpecify: props.onSpecify,
@@ -4041,6 +4071,9 @@
         renderMarkdown: props.renderMarkdown,
         onPatch: props.onPatch,
       }),
+      h(React.Suspense, { fallback: h("p", null, "Loading file approvals…") },
+        h(ApprovalPanel, { key: `${props.boardSlug}:${t.id}`, task: t,
+          boardSlug: props.boardSlug, onRefresh: props.onApprovalRefresh })),
       h(DependencyEditor, {
         task: t,
         links, allTasks: props.allTasks,
