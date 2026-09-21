@@ -44,6 +44,30 @@ test('desktopBackendSpawnEnv stamps the launch decision last and never lets an i
   }
 })
 
+test('desktopBackendSpawnEnv drops inherited worker identity so the backend is a human surface', () => {
+  const spawned = desktopBackendSpawnEnv({
+    HERMES_HOME: '/tmp/home/profiles/writer',
+    HERMES_DESKTOP: '1',
+    PATH: '/usr/bin',
+    HERMES_DELEGATED_CHILD_CONTEXT: '/tmp/home',
+    HERMES_KANBAN_TASK: 't_worker',
+    HERMES_KANBAN_RUN_ID: '99',
+    HERMES_KANBAN_CLAIM_LOCK: 'lock',
+    HERMES_KANBAN_GOAL_MODE: '1',
+    HERMES_KANBAN_GOAL_MAX_TURNS: '12'
+  }, false)
+
+  assert.equal(spawned.HERMES_HOME, '/tmp/home/profiles/writer')
+  assert.equal(spawned.HERMES_DESKTOP, '1')
+  assert.equal(spawned.HERMES_GUEST_ONBOARDING, '0')
+  assert.equal(spawned.HERMES_DELEGATED_CHILD_CONTEXT, undefined)
+  assert.equal(spawned.HERMES_KANBAN_TASK, undefined)
+  assert.equal(spawned.HERMES_KANBAN_RUN_ID, undefined)
+  assert.equal(spawned.HERMES_KANBAN_CLAIM_LOCK, undefined)
+  assert.equal(spawned.HERMES_KANBAN_GOAL_MODE, undefined)
+  assert.equal(spawned.HERMES_KANBAN_GOAL_MAX_TURNS, undefined)
+})
+
 test('remote SSH spawn command carries HERMES_GUEST_ONBOARDING=1 only when the launch decided on', () => {
   const on = buildSpawnCommand('/x/hermes', 'work', { logPath: '~/.hermes/log', guestOnboarding: true })
   assert.match(on, /exec env HERMES_DESKTOP=1 HERMES_GUEST_ONBOARDING=1 /)

@@ -1,0 +1,32 @@
+uid=502 gid=20(dialout) groups=20(dialout)
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+▶ launching test runner
+Discovered 6 test files (~108 tests) under ['tests/plugins/test_kanban_launch_identity.py', 'tests/plugins/test_kanban_dashboard_plugin.py', 'tests/hermes_cli/test_gui_command.py', 'tests/hermes_cli/test_serve_port_in_use.py', 'tests/hermes_cli/test_kanban_write_guard.py', 'tests/tools/test_delegate_kanban_isolation.py']; running with -j 4
+[  2.8% |     3/~108 | ✓3 | ✗0] ✓ tests/hermes_cli/test_kanban_write_guard.py (3✓, 0.9s)
+[ 45.4% |    49/~108 | ✓51 | ✗ 0] ✓ tests/hermes_cli/test_gui_command.py (48✓ 9s, 1.2s)
+[ 47.2% |    51/~108 | ✓56 | ✗ 0] ✓ tests/plugins/test_kanban_launch_identity.py (5✓, 1.5s)
+[ 53.7% |    58/~108 | ✓63 | ✗ 0] ✓ tests/tools/test_delegate_kanban_isolation.py (7✓, 2.1s)
+[ 62.0% |    67/~108 | ✓72 | ✗ 0] ✓ tests/hermes_cli/test_serve_port_in_use.py (9✓, 5.8s)
+[100.0% |   108/~108 | ✓113 | ✗  0] ✓ tests/plugins/test_kanban_dashboard_plugin.py (41✓, 6.9s)
+
+=== Summary: 6 files, 113 tests passed, 0 failed, 9 skipped (100% complete) in 6.9s (4 workers) ===
+
+  note: macos_only tests (in 1 file) were SKIPPED on this host (linux); they run on the tests-os CI lane (macos-latest).
+  note: windows_only tests (in 1 file) were SKIPPED on this host (linux); they run on the tests-os CI lane (windows-latest).
+  Durations cached to test_durations.json (6 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   6
+  Total subprocess CPU-wall: 18.4s  (runner wall: 6.9s, parallelism: 4x)
+  P50: 2.09s  P90: 6.87s  P95: 6.87s  P99: 6.87s  Max: 6.87s
+  <1s: 1 files (17%)  <2s: 3 files (50%)
+  Top 10 slowest:
+      6.87s  tests/plugins/test_kanban_dashboard_plugin.py
+      5.81s  tests/hermes_cli/test_serve_port_in_use.py
+      2.09s  tests/tools/test_delegate_kanban_isolation.py
+      1.50s  tests/plugins/test_kanban_launch_identity.py
+      1.19s  tests/hermes_cli/test_gui_command.py
+      0.90s  tests/hermes_cli/test_kanban_write_guard.py

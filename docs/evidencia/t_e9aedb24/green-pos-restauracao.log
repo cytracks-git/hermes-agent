@@ -1,0 +1,41 @@
+uid=502 gid=20(dialout) groups=20(dialout)
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: not a git repository: /Users/farantes/.hermes/hermes-agent/.git/worktrees/hermes-desktop-launch-boundary
+▶ launching test runner
+Discovered 8 test files (~112 tests) under ['tests/hermes_cli/test_launch_restriction_notice.py', 'tests/hermes_cli/test_launch_identity_live.py', 'tests/plugins/test_kanban_launch_identity.py', 'tests/hermes_cli/test_gui_command.py', 'tests/plugins/test_kanban_dashboard_plugin.py', 'tests/hermes_cli/test_kanban_write_guard.py', 'tests/tools/test_delegate_kanban_isolation.py', 'tests/hermes_cli/test_serve_port_in_use.py']; running with -j 28
+[  2.7% |     3/~112 | ✓3 | ✗0] ✓ tests/hermes_cli/test_kanban_write_guard.py (3✓, 3.3s)
+[ 43.8% |    49/~112 | ✓51 | ✗ 0] ✓ tests/hermes_cli/test_gui_command.py (48✓ 9s, 4.6s)
+[ 46.4% |    52/~112 | ✓56 | ✗ 0] ✓ tests/hermes_cli/test_launch_restriction_notice.py (5✓, 4.6s)
+[ 48.2% |    54/~112 | ✓61 | ✗ 0] ✓ tests/plugins/test_kanban_launch_identity.py (5✓, 5.1s)
+[ 54.5% |    61/~112 | ✓68 | ✗ 0] ✓ tests/tools/test_delegate_kanban_isolation.py (7✓, 11.2s)
+[ 62.5% |    70/~112 | ✓77 | ✗ 0] ✓ tests/hermes_cli/test_serve_port_in_use.py (9✓, 22.9s)
+[ 99.1% |   111/~112 | ✓118 | ✗  0] ✓ tests/plugins/test_kanban_dashboard_plugin.py (41✓, 25.7s)
+[100.0% |   112/~112 | ✓119 | ✗  0] ✓ tests/hermes_cli/test_launch_identity_live.py (1✓, 26.3s)
+
+=== Summary: 8 files, 119 tests passed, 0 failed, 9 skipped (100% complete) in 26.3s (28 workers) ===
+
+  note: macos_only tests (in 1 file) were SKIPPED on this host (linux); they run on the tests-os CI lane (macos-latest).
+  note: windows_only tests (in 1 file) were SKIPPED on this host (linux); they run on the tests-os CI lane (windows-latest).
+Traceback (most recent call last):
+  File "/repo/scripts/run_tests_parallel.py", line 1415, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/repo/scripts/run_tests_parallel.py", line 1343, in main
+    _save_durations(clean_times, repo_root)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/scripts/run_tests_parallel.py", line 749, in _save_durations
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/pathlib/_local.py", line 555, in write_text
+    return PathBase.write_text(self, data, encoding, errors, newline)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/pathlib/_abc.py", line 651, in write_text
+    with self.open(mode='w', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/pathlib/_local.py", line 537, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 30] Read-only file system: '/repo/test_durations.json'
