@@ -145,7 +145,7 @@ client.post(f"/tasks/{tid}/approvals/{request.request_id}/notice-retry")
 after = journal.get_request(conn, request.request_id)
 assert (before.state, before.decided_by, before.applied_at) == \
        (after.state, after.decided_by, after.applied_at), "retry mexeu na decisao"
-assert diag.notice_budget_open(conn, request.request_id, "lab-gen", limit=3)
+assert diag.notice_budget_open(conn, tid, request.request_id, "lab-gen", limit=3)
 print("--- retry reabriu o orcamento sem tocar na decisao")
 
 # 6. Conferencia externa, por fora da API: o arquivo NAO foi escrito. Diagnostico
