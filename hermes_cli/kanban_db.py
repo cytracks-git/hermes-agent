@@ -310,6 +310,21 @@ KANBAN_RATE_LIMIT_EXIT_CODE = 75
 # the FIRST occurrence instead of spending ``failure_limit`` identical spawns. 78 == BSD EX_CONFIG.
 KANBAN_TERMINAL_PROVIDER_EXIT_CODE = 78
 
+# ``failure_reason`` values the one-shot worker already maps onto those exits
+# (cli._single_query_exit_code). Shared so a quota/auth wall cannot collapse
+# to the Ralph judge's empty-response ``continue``.
+KANBAN_TRANSIENT_PROVIDER_REASONS = frozenset({
+    "rate_limit", "upstream_rate_limit", "billing", "overloaded", "server_error", "timeout",
+})
+KANBAN_TERMINAL_PROVIDER_REASONS = frozenset({
+    "auth", "auth_permanent", "model_not_found", "ssl_cert_verification",
+})
+
+
+def is_kanban_provider_unavailable(reason: Optional[str]) -> bool:
+    """True when ``failure_reason`` is a provider wall the dispatcher already owns."""
+    return reason in KANBAN_TRANSIENT_PROVIDER_REASONS or reason in KANBAN_TERMINAL_PROVIDER_REASONS
+
 
 def _resolve_crash_grace_seconds() -> int:
     """``HERMES_KANBAN_CRASH_GRACE_SECONDS`` (0 = immediate, for tests) else default."""
