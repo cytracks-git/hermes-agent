@@ -1604,8 +1604,10 @@ def _desktop_launch_env(args: argparse.Namespace) -> tuple[dict, list[str]]:
     """Electron child env + config-supplied extra flags. ``desktop.*`` config is bridged to env vars
     Electron already reads; an explicit env var wins over config (and over keychain detection)."""
     from hermes_constants import with_hermes_node_path
+    from hermes_cli.interactive_launch_context import human_interactive_subprocess_env
     # with_hermes_node_path() copies os.environ when called with no arg.
-    env = with_hermes_node_path()
+    # A cópia ainda carrega identidade de worker; a UI humana não pode nascer cercada.
+    env = human_interactive_subprocess_env(with_hermes_node_path())
     _prefer_wsl_d3d12(env)
     for attr, key in (
         ("fake_boot", "HERMES_DESKTOP_BOOT_FAKE"), ("ignore_existing", "HERMES_DESKTOP_IGNORE_EXISTING")):
@@ -1769,10 +1771,6 @@ def cmd_gui(args: argparse.Namespace):
     if deferred_entry is not None:
         env = deferred_entry.child_env(env)
         pass_fds = deferred_entry.pass_fds
-    # Avisar na origem sem apagar a restrição ou impedir leitura/uso remoto.
-    from hermes_cli.interactive_launch_context import warn_restricted_launch
-
-    warn_restricted_launch()
     with desktop_console_output(source_mode=source_mode) as streams:
         launch_result = subprocess.run(
             launch_command, cwd=desktop_dir, env=env, check=False, pass_fds=pass_fds, **streams

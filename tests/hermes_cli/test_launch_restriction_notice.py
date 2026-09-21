@@ -1,9 +1,9 @@
-"""Aviso de identidade herdada na ORIGEM do lançamento, sem destruir o recurso.
+"""Origem do lançamento: UI humana não nasce como delegated-child.
 
-O card exige que a restrição seja informada onde o lançamento nasce (`hermes
-desktop` e o backend `serve`/`dashboard`), que ela NÃO impeça o app de abrir
-(negar o boot destruiria leitura e uso remoto legítimos) e que `--build-only`
-não abra interface nenhuma.
+O Desktop/backend aberto para o operador não herda HERMES_DELEGATED_CHILD_CONTEXT
+nem HERMES_KANBAN_TASK do worker que o disparou. O processo pai permanece
+cercado (não há autopromoção). ``hermes serve`` no mesmo processo do worker
+continua restrito (aviso + 403). ``--build-only`` não abre interface.
 
 Os testes exercitam ``cmd_gui``/``start_server`` reais: só o processo Electron
 e o servidor uvicorn são substituídos, nunca o predicado de identidade.
@@ -12,6 +12,7 @@ e o servidor uvicorn são substituídos, nunca o predicado de identidade.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -19,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agent.delegation_context import DELEGATED_CHILD_ENV_MARKER
+from agent.delegation_context import DELEGATED_CHILD_ENV_MARKER, KANBAN_ENV_KEYS
 from hermes_cli import main as cli_main
 from hermes_cli import main_desktop
 from hermes_cli.interactive_launch_context import KANBAN_RESTRICTED_LAUNCH_MESSAGE
@@ -73,35 +74,70 @@ def _desktop_tree(tmp_path: Path, monkeypatch) -> Path:
     return exe
 
 
+_WORKER_IDENTITY_KEYS = (DELEGATED_CHILD_ENV_MARKER, *KANBAN_ENV_KEYS)
+
+
+def _assert_human_spawn_env(spawn_env: dict) -> None:
+    leaked = [key for key in _WORKER_IDENTITY_KEYS if key in spawn_env]
+    assert leaked == [], leaked
+
+
 @pytest.mark.parametrize("restricted", [True, False])
-def test_desktop_launch_warns_when_inherited_but_still_opens_the_app(
+def test_desktop_spawn_is_human_even_when_parent_is_fenced(
     tmp_path, monkeypatch, capsys, fenced_home, restricted
 ):
     """Controle positivo E negativo no mesmo estímulo.
 
-    Restrito: o aviso sai em stderr e o Electron É lançado assim mesmo.
-    Não restrito (mesmo caminho, só sem o marcador): nenhum aviso — o sensor
-    não acusa todo mundo.
+    Pai cercado: Electron abre, o env do FILHO não carrega o marcador, o pai
+    continua cercado, e a UI não é anunciada como read-only (ela não é).
+    Pai limpo: o mesmo caminho abre sem aviso — o sensor não acusa todo mundo.
     """
     exe = _desktop_tree(tmp_path, monkeypatch)
     if restricted:
         monkeypatch.setenv(DELEGATED_CHILD_ENV_MARKER, str(fenced_home))
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "t_worker")
+        monkeypatch.setenv("HERMES_KANBAN_RUN_ID", "99")
 
     launch_ok = subprocess.CompletedProcess([str(exe)], 0)
     with patch("hermes_cli.main_desktop._desktop_build_needed", return_value=False), \
          patch("hermes_cli.main_install_repair._resolve_node_runtime_npm", return_value="/usr/bin/npm"), \
          patch("hermes_cli.main_desktop._desktop_linux_sandbox_fixup", return_value=True), \
          patch("hermes_cli.main_desktop._register_linux_desktop_entry", return_value=None), \
-         patch("hermes_cli.main.subprocess.run", return_value=launch_ok) as run, \
+         patch("hermes_cli.main_desktop.subprocess.run", return_value=launch_ok) as run, \
          pytest.raises(SystemExit) as exc:
         cli_main.cmd_gui(_ns())
 
     assert exc.value.code == 0
-    # A restrição informa; nunca impede o lançamento.
     assert run.call_count == 1, "o app tem de abrir nos dois casos"
     assert str(exe) in run.call_args.args[0][0]
+    spawn_env = run.call_args.kwargs["env"]
+    _assert_human_spawn_env(spawn_env)
+    assert spawn_env.get("HERMES_HOME") == os.environ["HERMES_HOME"]
     err = capsys.readouterr().err
-    assert (KANBAN_RESTRICTED_LAUNCH_MESSAGE in err) is restricted, err
+    assert KANBAN_RESTRICTED_LAUNCH_MESSAGE not in err, err
+    if restricted:
+        assert os.environ[DELEGATED_CHILD_ENV_MARKER] == str(fenced_home)
+        assert os.environ["HERMES_KANBAN_TASK"] == "t_worker"
+
+
+def test_desktop_launch_env_strips_worker_identity_for_profile_home(
+    tmp_path, monkeypatch, fenced_home
+):
+    """Perfil no HERMES_HOME não é identidade de worker: a UI do perfil nasce humana."""
+    profile = fenced_home / "profiles" / "writer"
+    profile.mkdir(parents=True)
+    monkeypatch.setenv("HERMES_HOME", str(profile))
+    monkeypatch.setenv(DELEGATED_CHILD_ENV_MARKER, str(fenced_home))
+    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_worker")
+    monkeypatch.setattr(main_desktop, "_desktop_launch_options", lambda: ([], "auto", "auto", "auto"))
+    monkeypatch.setattr(main_desktop, "_detect_linux_password_store", lambda: None)
+
+    env, _flags = main_desktop._desktop_launch_env(_ns(cwd=str(tmp_path)))
+
+    _assert_human_spawn_env(env)
+    assert env["HERMES_HOME"] == str(profile)
+    assert os.environ[DELEGATED_CHILD_ENV_MARKER] == str(fenced_home)
+    assert os.environ["HERMES_KANBAN_TASK"] == "t_worker"
 
 
 def test_build_only_opens_no_ui_and_emits_no_launch_notice(
@@ -115,7 +151,7 @@ def test_build_only_opens_no_ui_and_emits_no_launch_notice(
          patch("hermes_cli.main_install_repair._resolve_node_runtime_npm", return_value="/usr/bin/npm"), \
          patch("hermes_cli.main_desktop._desktop_linux_sandbox_fixup", return_value=True), \
          patch("hermes_cli.main_desktop._register_linux_desktop_entry", return_value=None), \
-         patch("hermes_cli.main.subprocess.run", side_effect=AssertionError("--build-only lançou UI")):
+         patch("hermes_cli.main_desktop.subprocess.run", side_effect=AssertionError("--build-only lançou UI")):
         cli_main.cmd_gui(_ns(build_only=True))
 
     captured = capsys.readouterr()
