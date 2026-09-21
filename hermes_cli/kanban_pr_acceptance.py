@@ -36,11 +36,14 @@ def _api(endpoint: str, *, query: str | None = None, paginate: bool = False):
     return value
 
 
-def collect_acceptance(contract: str, published_pr: str | None) -> dict:
+def collect_acceptance(contract: str, published_pr: str | None, *, accepted_sha: str | None = None) -> dict:
     receipt = {"ok": False, "classification": "missing", "head_sha": None,
                "pr_url": published_pr, "checks": [],
+               "pr_state": None, "is_draft": False, "sha_is_ancestor_of_base": False,
+               "accepted_sha": accepted_sha,
                "recovery": "Fix required failures, rerun infrastructure checks or wait, then retry completion. "
-                           "Use kanban_block if human input is needed; receipts remain on the task event log."}
+                           "Use kanban_block if human input is needed; receipts remain on the task event log. "
+                           "OPEN+CI is execution evidence, never Integrated."}
     try:
         declared = _PR.fullmatch(contract)
         url = contract if declared else published_pr
@@ -52,11 +55,14 @@ def collect_acceptance(contract: str, published_pr: str | None) -> dict:
         receipt["pr_url"] = url
         owner, name = repo.split("/")
         query = '''{repository(owner:%s,name:%s){pullRequest(number:%d){headRefOid baseRefName state
+            isDraft mergeCommit{oid}
             baseRef{branchProtectionRule{requiredStatusChecks{context app{databaseId}}}}}}}''' % (
                 json.dumps(owner), json.dumps(name), number)
         pr = _api("graphql", query=query)["data"]["repository"]["pullRequest"]
         sha, branch = pr["headRefOid"], pr["baseRefName"]
         receipt["head_sha"] = sha
+        receipt["pr_state"] = pr["state"]
+        receipt["is_draft"] = bool(pr.get("isDraft"))
         if not re.fullmatch(r"[0-9a-f]{40}", sha) or pr["state"] not in {"OPEN", "MERGED"}:
             raise ValueError("PR is closed or current head is unavailable")
         protection = (pr.get("baseRef") or {}).get("branchProtectionRule") or {}
@@ -102,6 +108,10 @@ def collect_acceptance(contract: str, published_pr: str | None) -> dict:
             return receipt
         receipt["classification"] = next((x for x in outcomes if x != "success"), "missing" if not outcomes else "success")
         receipt["ok"] = receipt["classification"] == "success"
+        # Ancestry is a delivery fact, not an execution gate. OPEN never counts as ancestral.
+        if pr["state"] == "MERGED" and receipt["ok"]:
+            compared = _api(f"repos/{repo}/compare/{sha}...{quote(branch, safe='')}")
+            receipt["sha_is_ancestor_of_base"] = compared.get("status") in {"identical", "ahead"}
         return receipt
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError, IndexError):
         # Never persist gh stderr (credentials/host details); the failed phase is actionable.

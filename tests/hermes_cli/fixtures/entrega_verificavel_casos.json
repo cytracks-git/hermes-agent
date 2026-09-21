@@ -1,0 +1,856 @@
+{
+  "freeze_desenho": "a4edf2f456d385ac8a6ca345ccdfb373a24ac508",
+  "desenho_sha1": "e3652981df7fee025360e47161905e76547d37cf",
+  "sha_a": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sha_b": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "mandatory_negatives": [
+    "N01",
+    "N02",
+    "N03",
+    "N04",
+    "N05",
+    "N06",
+    "N07",
+    "N08",
+    "N09"
+  ],
+  "mandatory_positives": [
+    "P01",
+    "P04",
+    "P07"
+  ],
+  "cases": [
+    {
+      "id": "P01",
+      "title": "Card de fase local legítima completa sem exigir main",
+      "kind": "positivo",
+      "lote": 1,
+      "precondition": "applicability=local_phase, local_phase nomeada (desenho), completion_contract=local-only, sem published_pr.",
+      "steps": [
+        "complete_task com summary qualquer",
+        "reconciliador de entrega no tick"
+      ],
+      "expected": {
+        "delivery": "n/a",
+        "complete_ok": true,
+        "counts_as_integrated": false,
+        "counts_as_delivered": false,
+        "github_calls_expected": 0
+      },
+      "facts": {
+        "applicability": "local_phase",
+        "local_phase": "desenho",
+        "completion_contract": "local-only"
+      },
+      "automation": "fixture SQLite isolado (tmp HERMES_HOME) + contrato local-only; zero requests no mock GitHub. Já coberto em espírito por test_kanban_pr_acceptance (linux_only). Este oracle trava o veredito de entrega.",
+      "design_refs": [
+        "D3",
+        "D1",
+        "§2 n/a",
+        "T5"
+      ]
+    },
+    {
+      "id": "P04",
+      "title": "PR com CI verde + revisão independente + SHA autorizado → auto-merge permitido",
+      "kind": "positivo",
+      "lote": 3,
+      "precondition": "PR OPEN não-draft, CI required success no accepted_sha, review independente no mesmo SHA, H1/Rel gravou accepted_sha, pais done, guards e updater ligados. Setting de repo auto-merge NÃO é deste lote (H1).",
+      "steps": [
+        "gravar accepted_sha (gesto humano)",
+        "reconciliador avalia auto_merge_allowed",
+        "NÃO POST merge se lote < 3"
+      ],
+      "expected": {
+        "delivery": "awaiting_integration",
+        "complete_ok": true,
+        "counts_as_integrated": false,
+        "counts_as_delivered": false,
+        "auto_merge_allowed": true
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "completion_contract": "acme/repo",
+        "pr_state": "OPEN",
+        "is_draft": false,
+        "ci_success_on_accepted_sha": true,
+        "independent_review_on_accepted_sha": true,
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "human_sha_authorization": true,
+        "parents_done": true
+      },
+      "automation": "fixture GraphQL OPEN + check-runs success + review no SHA + flag human_sha_authorization. Mock GitHub; nunca board atlas nem repo real. Lote 3 executa o POST; lote 1 só persiste o veredito auto_merge_allowed.",
+      "design_refs": [
+        "D4",
+        "§6 auto-merge",
+        "T6",
+        "T8"
+      ]
+    },
+    {
+      "id": "P07",
+      "title": "Instalação verificada por health check externo",
+      "kind": "positivo",
+      "lote": 2,
+      "precondition": "applicability=requires_install, SHA ancestral de main, bytes no ambiente batem, health check no ambiente declarado ok. Janela H1 já abriu.",
+      "steps": [
+        "readback bytes/processo",
+        "health HTTP/processo/sensor de efeito",
+        "avançar installed → verified"
+      ],
+      "expected": {
+        "delivery": "verified",
+        "complete_ok": true,
+        "counts_as_integrated": true,
+        "counts_as_delivered": true
+      },
+      "facts": {
+        "applicability": "requires_install",
+        "completion_contract": "acme/repo",
+        "pr_state": "MERGED",
+        "merged": true,
+        "is_draft": false,
+        "ci_success_on_accepted_sha": true,
+        "independent_review_on_accepted_sha": true,
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sha_is_ancestor_of_base": true,
+        "installed_bytes_match": true,
+        "health_ok": true,
+        "human_sha_authorization": true
+      },
+      "automation": "fixture de health (HTTP 200 no lab isolado / digest servido). Proibido atlas.local do Mac como aceite (12-D). Lote 2.",
+      "design_refs": [
+        "D5",
+        "§2 verified",
+        "§4 prova 4",
+        "T10"
+      ]
+    },
+    {
+      "id": "P03",
+      "title": "OPEN não-draft + CI no SHA autorizado → awaiting_integration, não Integrado",
+      "kind": "positivo",
+      "lote": 1,
+      "precondition": "requires_main, PR OPEN, isDraft=false, CI exact-head verde, accepted_sha=head, ainda não em main.",
+      "steps": [
+        "collect_acceptance estendido",
+        "persistir delivery_status"
+      ],
+      "expected": {
+        "delivery": "awaiting_integration",
+        "complete_ok": true,
+        "counts_as_integrated": false,
+        "counts_as_delivered": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "completion_contract": "acme/repo",
+        "pr_state": "OPEN",
+        "is_draft": false,
+        "ci_success_on_accepted_sha": true,
+        "independent_review_on_accepted_sha": true,
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "human_sha_authorization": false
+      },
+      "automation": "mesmo mock HTTP de test_kanban_pr_acceptance, com state OPEN. Assert delivery!=integrated. Controle positivo do lote 1 (stop criterion).",
+      "design_refs": [
+        "D4",
+        "§2 awaiting_integration",
+        "lote 1 critério de parada"
+      ]
+    },
+    {
+      "id": "P05",
+      "title": "MERGED + não-draft + SHA autorizado ancestral → integrated",
+      "kind": "positivo",
+      "lote": 1,
+      "precondition": "state=MERGED, isDraft=false, head==accepted_sha, oid ancestral de base, review independente no SHA.",
+      "steps": [
+        "GraphQL MERGED",
+        "merge-base/ancestral",
+        "delivery=integrated"
+      ],
+      "expected": {
+        "delivery": "integrated",
+        "complete_ok": true,
+        "counts_as_integrated": true,
+        "counts_as_delivered": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "completion_contract": "acme/repo",
+        "pr_state": "MERGED",
+        "merged": true,
+        "is_draft": false,
+        "ci_success_on_accepted_sha": true,
+        "independent_review_on_accepted_sha": true,
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sha_is_ancestor_of_base": true,
+        "human_sha_authorization": true
+      },
+      "automation": "fixture GraphQL state=MERGED + oid ancestral. Mock; nunca merge real.",
+      "design_refs": [
+        "D4",
+        "D5",
+        "§2 integrated",
+        "T8"
+      ]
+    },
+    {
+      "id": "P06",
+      "title": "Bytes no ambiente declarado → installed, ainda não verified",
+      "kind": "positivo",
+      "lote": 2,
+      "precondition": "integrated verdadeiro, janela H1 aberta, readback de bytes/processo bate, health ainda não ok.",
+      "steps": [
+        "install na janela",
+        "readback code_sha/version/digest",
+        "não avançar verified"
+      ],
+      "expected": {
+        "delivery": "installed",
+        "complete_ok": true,
+        "counts_as_integrated": true,
+        "counts_as_delivered": false
+      },
+      "facts": {
+        "applicability": "requires_install",
+        "pr_state": "MERGED",
+        "merged": true,
+        "is_draft": false,
+        "ci_success_on_accepted_sha": true,
+        "independent_review_on_accepted_sha": true,
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sha_is_ancestor_of_base": true,
+        "installed_bytes_match": true,
+        "health_ok": false,
+        "human_sha_authorization": true,
+        "completion_contract": "acme/repo"
+      },
+      "automation": "fixture de readback (digest). Lote 2. Não chamar hermes update.",
+      "design_refs": [
+        "D5",
+        "§2 installed",
+        "T9"
+      ]
+    },
+    {
+      "id": "P02",
+      "title": "Revisão independente no SHA (não o summary) → reviewed",
+      "kind": "positivo",
+      "lote": 1,
+      "precondition": "run profile=revisor outcome=completed no accepted_sha, ou review GitHub no mesmo SHA. Executor summary presente e ignorado.",
+      "steps": [
+        "fechar review",
+        "reconciliar delivery=reviewed"
+      ],
+      "expected": {
+        "delivery": "reviewed",
+        "complete_ok": true,
+        "counts_as_integrated": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "completion_contract": "acme/repo",
+        "independent_review_on_accepted_sha": true,
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "executor_summary": "parece mergeado"
+      },
+      "automation": "fixture task_runs.profile=revisor. Summary do executor no fixture deve ser ignorado (ver N13).",
+      "design_refs": [
+        "§2 reviewed",
+        "§4 prova 5",
+        "T4"
+      ]
+    },
+    {
+      "id": "P08",
+      "title": "HEAD inalterado após CI/revisão: aceite permanece",
+      "kind": "positivo",
+      "lote": 1,
+      "precondition": "delivery=reviewed ou awaiting_integration, headRefOid == accepted_sha no tick.",
+      "steps": [
+        "tick do dispatcher",
+        "reler headRefOid"
+      ],
+      "expected": {
+        "delivery": "awaiting_integration",
+        "complete_ok": true,
+        "counts_as_integrated": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "pr_state": "OPEN",
+        "is_draft": false,
+        "ci_success_on_accepted_sha": true,
+        "independent_review_on_accepted_sha": true,
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "completion_contract": "acme/repo"
+      },
+      "automation": "mesmo mock, head estável entre duas coletas (já existe recusa stale no código atual para o inverso).",
+      "design_refs": [
+        "§5",
+        "diagrama B POSITIVO"
+      ]
+    },
+    {
+      "id": "N01",
+      "title": "PR OPEN com CI verde mas sem merge NÃO conta como entregue",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "PR OPEN, required CI success no head, isDraft=false. Hoje collect_acceptance.ok=True (infra-atual.md §2).",
+      "steps": [
+        "montar fixture state=OPEN conclusion=success",
+        "pedir veredito de entrega",
+        "complete_task se applicability=requires_main"
+      ],
+      "expected": {
+        "delivery": "awaiting_integration",
+        "complete_ok": true,
+        "counts_as_integrated": false,
+        "counts_as_delivered": false,
+        "auto_merge_allowed": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "completion_contract": "acme/repo",
+        "pr_state": "OPEN",
+        "is_draft": false,
+        "ci_success_on_accepted_sha": true,
+        "independent_review_on_accepted_sha": true,
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "human_sha_authorization": false
+      },
+      "automation": "fixture mock GitHub idêntico ao teste atual (state OPEN). Oracle exige counts_as_integrated=false. Produção lote 1: complete não pode gravar integrated. Controle negativo canônico.",
+      "design_refs": [
+        "D4",
+        "§4 prova recusada OPEN",
+        "lote 1 parada"
+      ]
+    },
+    {
+      "id": "N02",
+      "title": "HEAD mudou após CI/revisão → estado invalidado",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "accepted_sha=A, CI e review no A, push novo head=B.",
+      "steps": [
+        "tick relê headRefOid",
+        "B ≠ A",
+        "delivery=invalidated",
+        "coluna execução intacta"
+      ],
+      "expected": {
+        "delivery": "invalidated",
+        "complete_ok": true,
+        "counts_as_integrated": false,
+        "counts_as_delivered": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "pr_state": "OPEN",
+        "is_draft": false,
+        "ci_success_on_accepted_sha": true,
+        "independent_review_on_accepted_sha": true,
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "delivery_before": "awaiting_integration",
+        "completion_contract": "acme/repo"
+      },
+      "automation": "mock com head_change (já existe no teste atual para recusar complete). Estender: delivery_status reverte para invalidated, done permanece done.",
+      "design_refs": [
+        "§5",
+        "T11",
+        "infra-atual.md §2 passo 7"
+      ]
+    },
+    {
+      "id": "N03",
+      "title": "admin-bypass recusado e registrado",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "tentativa de merge sem PR, ou identidade com bypass, ou flag admin_bypass no pedido.",
+      "steps": [
+        "reconciliador vê admin_bypass",
+        "recusa",
+        "evento visível"
+      ],
+      "expected": {
+        "recorded_refusal": true,
+        "auto_merge_allowed": false,
+        "counts_as_integrated": false,
+        "error_visible": true
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "admin_bypass": true,
+        "pr_state": "OPEN",
+        "ci_success_on_accepted_sha": true,
+        "independent_review_on_accepted_sha": true,
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "human_sha_authorization": true,
+        "delivery_before": "awaiting_integration"
+      },
+      "automation": "fixture com admin_bypass=true. Não exercitar bypass real em repo. Lista de bypass da org = NAO MEDIDO no freeze (desenho §6).",
+      "design_refs": [
+        "§6 tabela proibições",
+        "T13"
+      ]
+    },
+    {
+      "id": "N04",
+      "title": "force-push recusado e registrado",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "forced=true ou non-ff na base. Fork sem ruleset (infra-atual.md §4): o reconciliador tem de recusar mesmo sem proteção GitHub.",
+      "steps": [
+        "detectar forced/non-ff",
+        "recusa visível",
+        "não contar como integrated"
+      ],
+      "expected": {
+        "recorded_refusal": true,
+        "auto_merge_allowed": false,
+        "error_visible": true
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "force_push": true,
+        "delivery_before": "awaiting_integration"
+      },
+      "automation": "fixture forced=true. Não force-push em repo real. Upstream já tem non_fast_forward; fork não — o caso existe para o fork.",
+      "design_refs": [
+        "§5 fork force-push",
+        "§6",
+        "T13"
+      ]
+    },
+    {
+      "id": "N05",
+      "title": "Desativar guards ou updater → bloqueado e registrado",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "card ou passo propõe desligar guards/updater / hermes update recusado como atalho.",
+      "steps": [
+        "detectar guards_off ou updater_off",
+        "recusa CISO",
+        "não auto-merge"
+      ],
+      "expected": {
+        "recorded_refusal": true,
+        "auto_merge_allowed": false,
+        "error_visible": true
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "guards_off": true,
+        "updater_off": true,
+        "delivery_before": "awaiting_integration"
+      },
+      "automation": "fixture flags. Fora de escopo executar hermes update. Roteiro: qualquer PR que mexa em workflow/ruleset para desligar check = recusa, não merge.",
+      "design_refs": [
+        "§6",
+        "T13",
+        "D2 sem segundo daemon"
+      ]
+    },
+    {
+      "id": "N06",
+      "title": "Aceite H1 sintético rejeitado",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "complete/merge sem evento de aprovação humana no SHA; texto gerado pelo agente no lugar do clique.",
+      "steps": [
+        "pedido com synthetic_h1",
+        "recusa",
+        "não grava accepted_sha"
+      ],
+      "expected": {
+        "recorded_refusal": true,
+        "auto_merge_allowed": false,
+        "error_visible": true
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "synthetic_h1": true,
+        "pr_state": "OPEN",
+        "ci_success_on_accepted_sha": true,
+        "human_sha_authorization": false,
+        "delivery_before": "awaiting_integration"
+      },
+      "automation": "fixture synthetic_h1=true. Frente waiting_approval (#895/t_78aaa333) não é substituída. Não fabricar clique.",
+      "design_refs": [
+        "§4 aceite H1 sintético",
+        "§6",
+        "T6"
+      ]
+    },
+    {
+      "id": "N07",
+      "title": "Merge tratado como deploy → recusa verified",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "state=MERGED, ancestral ok, alguém pede delivery=verified sem installed+health.",
+      "steps": [
+        "claim_verified_from_merge_only",
+        "recusa",
+        "permanece no máximo integrated"
+      ],
+      "expected": {
+        "delivery": "integrated",
+        "counts_as_integrated": true,
+        "counts_as_delivered": false,
+        "recorded_refusal": true
+      },
+      "facts": {
+        "applicability": "requires_install",
+        "claim_verified_from_merge_only": true,
+        "pr_state": "MERGED",
+        "merged": true,
+        "sha_is_ancestor_of_base": true,
+        "delivery_before": "integrated"
+      },
+      "automation": "fixture. Assert counts_as_delivered is false. Chip UI não pode dizer Verified.",
+      "design_refs": [
+        "D5",
+        "§6 merge≠deploy",
+        "T9",
+        "T10"
+      ]
+    },
+    {
+      "id": "N08",
+      "title": "Retomada após queda não duplica ação (idempotência)",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "transição (task_id, accepted_sha, awaiting→integrated) já aplicada; PID morreu; reclaim → ready.",
+      "steps": [
+        "retry mesmo card/SHA/transição",
+        "segundo POST merge não sai"
+      ],
+      "expected": {
+        "duplicate_action": false,
+        "second_post": false,
+        "complete_ok": true
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "retry_after_crash": true,
+        "prior_action_applied": true,
+        "delivery_before": "integrated",
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "automation": "fixture com prior_action_applied. Produção: chave idempotente; GitHub 405/já merged = sucesso idempotente, não segundo merge. Reclaim atual já não incrementa failure (infra-atual.md §3) — entrega não avança no reclaim.",
+      "design_refs": [
+        "§7",
+        "T8",
+        "infra-atual.md §3 reclaim"
+      ]
+    },
+    {
+      "id": "N09",
+      "title": "Erro do GitHub fica visível, não é engolido como n/a",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "requires_main, gh api falha (timeout, 401, GraphQL errors).",
+      "steps": [
+        "collect_acceptance classificação infra",
+        "chip error/unknown",
+        "não promover n/a"
+      ],
+      "expected": {
+        "error_visible": true,
+        "error_swallowed": false,
+        "counts_as_integrated": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "github_error": true,
+        "delivery_before": "n/a"
+      },
+      "automation": "mock GitHub 500/timeout. collect_acceptance hoje já devolve classification=infra (não ok). Falta: delivery=unknown visível, nunca n/a.",
+      "design_refs": [
+        "§7 erro GitHub",
+        "T12",
+        "§2 unknown"
+      ]
+    },
+    {
+      "id": "N10",
+      "title": "Estado desconhecido não vira n/a entregável nem se infere para frente",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "card sem campos de entrega, título/sinal de PR/main. Inventário: 91 unknown.",
+      "steps": [
+        "applicability=unknown",
+        "não complete como entregável",
+        "não reabrir em massa"
+      ],
+      "expected": {
+        "delivery": "n/a",
+        "complete_ok": false,
+        "counts_as_integrated": false
+      },
+      "facts": {
+        "applicability": "unknown"
+      },
+      "automation": "fixture card sem target_final/repo/base. Next action=medir. Recode dos 91 é T15, não lote 1.",
+      "design_refs": [
+        "§1 unknown",
+        "§3 card sem campos",
+        "T15"
+      ]
+    },
+    {
+      "id": "N11",
+      "title": "Draft depois do aceite invalida awaiting_integration",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "delivery=awaiting_integration, PR marcada draft depois.",
+      "steps": [
+        "tick lê isDraft=true",
+        "delivery=invalidated"
+      ],
+      "expected": {
+        "delivery": "invalidated",
+        "counts_as_integrated": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "is_draft": true,
+        "draft_after_accept": true,
+        "delivery_before": "awaiting_integration",
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "completion_contract": "acme/repo"
+      },
+      "automation": "fixture isDraft true após aceite.",
+      "design_refs": [
+        "§5 draft depois"
+      ]
+    },
+    {
+      "id": "N12",
+      "title": "Marcar draft em massa no mesmo tick → recusa lote",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "N drafts no mesmo tick por um writer. Um draft pontual continua lícito.",
+      "steps": [
+        "detectar mass_draft",
+        "recusar lote",
+        "registrar"
+      ],
+      "expected": {
+        "recorded_refusal": true,
+        "error_visible": true,
+        "auto_merge_allowed": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "mass_draft": true,
+        "delivery_before": "awaiting_integration"
+      },
+      "automation": "fixture mass_draft=true. Um draft pontual é P-adjacente (não neste id).",
+      "design_refs": [
+        "§6 draft em massa",
+        "T13"
+      ]
+    },
+    {
+      "id": "N13",
+      "title": "Summary autoral não conta como revisão nem como entrega",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "só summary/result/latest_summary do executor; sem run revisor no SHA.",
+      "steps": [
+        "avaliar prova",
+        "recusar reviewed/integrated"
+      ],
+      "expected": {
+        "recorded_refusal": true,
+        "counts_as_integrated": false,
+        "error_visible": true
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "summary_as_proof": true,
+        "executor_summary_as_review": true,
+        "delivery_before": "n/a"
+      },
+      "automation": "fixture sem task_runs revisor. Assert recusa.",
+      "design_refs": [
+        "§4 prova recusada"
+      ]
+    },
+    {
+      "id": "N14",
+      "title": "Contrato NULL legado em card que exige main → unknown até recodificar",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "completion_contract NULL/vazio, applicability=requires_main. Hoje if not contract pula o gate.",
+      "steps": [
+        "não tratar como local-only silencioso",
+        "delivery=unknown"
+      ],
+      "expected": {
+        "delivery": "unknown",
+        "complete_ok": false,
+        "counts_as_integrated": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "completion_contract": null
+      },
+      "automation": "fixture contract vazio. 29 NULL no inventário — não recodificar em massa aqui.",
+      "design_refs": [
+        "D3",
+        "§3 NULL legado",
+        "régua 29 NULL"
+      ]
+    },
+    {
+      "id": "N15",
+      "title": "Merge revertido → integrated invalida",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "delivery=integrated, SHA deixou de ser ancestral da base.",
+      "steps": [
+        "tick verifica ancestral",
+        "delivery=invalidated"
+      ],
+      "expected": {
+        "delivery": "invalidated",
+        "counts_as_integrated": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "merge_reverted": true,
+        "delivery_before": "integrated",
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "completion_contract": "acme/repo"
+      },
+      "automation": "fixture sha_is_ancestor_of_base=false + merge_reverted. Force-push na main do fork é o estímulo real; não executar no fork vivo.",
+      "design_refs": [
+        "§5 integrated só invalida se revertido"
+      ]
+    },
+    {
+      "id": "N16",
+      "title": "Segundo dispatcher / daemon --force recusado",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "pedido de hermes kanban daemon --force ou segundo writer no mesmo db.",
+      "steps": [
+        "detectar second_dispatcher",
+        "recusa visível"
+      ],
+      "expected": {
+        "recorded_refusal": true,
+        "error_visible": true
+      },
+      "facts": {
+        "second_dispatcher": true
+      },
+      "automation": "fixture. Código atual: daemon sai 2 sem --force (infra-atual.md §3). Não disparar --force nem dry-run no vivo.",
+      "design_refs": [
+        "D2",
+        "§7",
+        "T13"
+      ]
+    },
+    {
+      "id": "N17",
+      "title": "dispatch --dry-run em board vivo é proibido (roteiro manual)",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "operador/agente tentaria hermes kanban dispatch --dry-run no board atlas.",
+      "steps": [
+        "NÃO executar",
+        "lab isolado só no card de implementação, board descartável"
+      ],
+      "expected": {
+        "recorded_refusal": true
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "admin_bypass": true,
+        "delivery_before": "n/a"
+      },
+      "automation": "MANUAL JUSTIFICADO: automatizar isto exigiria dry-run no board vivo, que o corpo deste card PROÍBE. O caso existe para o revisor conferir que nenhum roteiro desta pasta dispara dispatch. Sensor desta suite: run_suite.py recusa --live.",
+      "design_refs": [
+        "§7 dry_run",
+        "corpo t_604033c2 PROIBIDO"
+      ]
+    },
+    {
+      "id": "N18",
+      "title": "local-only apresentado como entregue em main → recusa",
+      "kind": "negativo",
+      "lote": 1,
+      "precondition": "applicability deveria ser local_phase mas o pedido exige main / counts_as_delivered.",
+      "steps": [
+        "require_main em local_phase",
+        "recusa"
+      ],
+      "expected": {
+        "delivery": "n/a",
+        "recorded_refusal": true,
+        "counts_as_delivered": false
+      },
+      "facts": {
+        "applicability": "local_phase",
+        "local_phase": "desenho",
+        "completion_contract": "local-only",
+        "require_main": true
+      },
+      "automation": "fixture require_main=true em local_phase.",
+      "design_refs": [
+        "D3",
+        "§4 local-only como main"
+      ]
+    },
+    {
+      "id": "N19",
+      "title": "Pais de execução abertos bloqueiam auto-merge",
+      "kind": "negativo",
+      "lote": 3,
+      "precondition": "todos os gates de SHA verdes, mas parents_done=false.",
+      "steps": [
+        "auto_merge_allowed deve ser false",
+        "DAG intacto"
+      ],
+      "expected": {
+        "delivery": "awaiting_integration",
+        "auto_merge_allowed": false,
+        "counts_as_integrated": false
+      },
+      "facts": {
+        "applicability": "requires_main",
+        "pr_state": "OPEN",
+        "is_draft": false,
+        "ci_success_on_accepted_sha": true,
+        "independent_review_on_accepted_sha": true,
+        "accepted_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "human_sha_authorization": true,
+        "parents_done": false,
+        "completion_contract": "acme/repo"
+      },
+      "automation": "fixture parents_done=false.",
+      "design_refs": [
+        "§6 item 5",
+        "D1 DAG"
+      ]
+    }
+  ]
+}

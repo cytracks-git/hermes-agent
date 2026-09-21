@@ -139,6 +139,9 @@ class DispatchResult:
     """Task ids whose workers bailed on a provider rate-limit / quota wall
     (EX_TEMPFAIL sentinel exit) and were released to ``ready`` WITHOUT counting
     a failure — a long quota window must never trip the circuit breaker."""
+    delivery_invalidated: list[str] = field(default_factory=list)
+    """Task ids whose delivery_status moved to invalidated this tick (HEAD
+    diverged or merge reverted). Execution column is untouched."""
     skipped_locked: bool = False
     """True when another process held the board's dispatch lock: this tick did
     no DB writes; the lock holder is making progress on the same board."""
@@ -2145,6 +2148,8 @@ def _run_reclaim_phase(
     result.rate_limited.extend(getattr(detect_crashed_workers, "_last_rate_limited", []))
     result.timed_out = enforce_max_runtime(conn)
     result.promoted = _kb.recompute_ready(conn, failure_limit=failure_limit)
+    from hermes_cli.kanban_delivery_store import reconcile_delivery
+    result.delivery_invalidated = reconcile_delivery(conn)
 
 
 def _tick_spawn_budget(
