@@ -45,17 +45,20 @@ test('desktopBackendSpawnEnv stamps the launch decision last and never lets an i
 })
 
 test('desktopBackendSpawnEnv drops inherited worker identity so the backend is a human surface', () => {
-  const spawned = desktopBackendSpawnEnv({
-    HERMES_HOME: '/tmp/home/profiles/writer',
-    HERMES_DESKTOP: '1',
-    PATH: '/usr/bin',
-    HERMES_DELEGATED_CHILD_CONTEXT: '/tmp/home',
-    HERMES_KANBAN_TASK: 't_worker',
-    HERMES_KANBAN_RUN_ID: '99',
-    HERMES_KANBAN_CLAIM_LOCK: 'lock',
-    HERMES_KANBAN_GOAL_MODE: '1',
-    HERMES_KANBAN_GOAL_MAX_TURNS: '12'
-  }, false)
+  const spawned = desktopBackendSpawnEnv(
+    {
+      HERMES_HOME: '/tmp/home/profiles/writer',
+      HERMES_DESKTOP: '1',
+      PATH: '/usr/bin',
+      HERMES_DELEGATED_CHILD_CONTEXT: '/tmp/home',
+      HERMES_KANBAN_TASK: 't_worker',
+      HERMES_KANBAN_RUN_ID: '99',
+      HERMES_KANBAN_CLAIM_LOCK: 'lock',
+      HERMES_KANBAN_GOAL_MODE: '1',
+      HERMES_KANBAN_GOAL_MAX_TURNS: '12'
+    },
+    false
+  )
 
   assert.equal(spawned.HERMES_HOME, '/tmp/home/profiles/writer')
   assert.equal(spawned.HERMES_DESKTOP, '1')

@@ -45,8 +45,10 @@ const WORKER_IDENTITY_ENV_KEYS = [
 // the parent's environment cannot leak into a backend the launch decided off.
 export function desktopBackendSpawnEnv(base: NodeJS.ProcessEnv, guestOnboarding: boolean): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base, [GUEST_ONBOARDING_ENV]: guestOnboarding ? '1' : '0' }
+
   for (const key of WORKER_IDENTITY_ENV_KEYS) {
     delete env[key]
   }
+
   return env
 }
