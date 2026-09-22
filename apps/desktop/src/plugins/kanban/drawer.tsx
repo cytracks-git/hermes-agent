@@ -46,8 +46,8 @@ import {
   taskKey,
   uploadAttachment
 } from './api'
-import { ModelOverrideField, overridePatch } from './model-override'
 import { ApprovalPanel } from './approval-panel'
+import { ModelOverrideField, overridePatch } from './model-override'
 import {
   type Diagnostic,
   type DiagnosticAction,

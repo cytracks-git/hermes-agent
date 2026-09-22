@@ -1334,7 +1334,7 @@ export function KanbanBoardPage() {
           {total}
         </span>
         {board?.pending_approvals !== undefined && (
-          <span role="status" className="text-xs text-foreground">
+          <span className="text-xs text-foreground" role="status">
             Pending approvals: {board.pending_approvals}
           </span>
         )}
