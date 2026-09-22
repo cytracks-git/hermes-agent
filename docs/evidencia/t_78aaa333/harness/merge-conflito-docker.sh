@@ -29,12 +29,15 @@ INSTALACAO=/Users/farantes/.hermes/hermes-agent
 
 [ -d "$INSTALACAO/.git" ] || { echo "NAO MEDIDO: $INSTALACAO sem .git"; exit 2; }
 
+# Scratch do container nao-root. TMPDIR do host nao existe dentro da imagem.
+_ctmp=/tmp  # no-tmp: ok — container scratch; host TMPDIR nao monta
+
 exec docker run --rm --network none \
   -u 502:20 \
   --entrypoint sh \
   -v "$INSTALACAO":/instalacao:ro \
-  -w /tmp \
-  -e HOME=/tmp \
+  -w "$_ctmp" \
+  -e HOME="$_ctmp" \
   -e CARD_SHA="$CARD_SHA" \
   -e ALVO_SHA="$ALVO_SHA" \
   alpine/git:latest \
@@ -46,8 +49,8 @@ exec docker run --rm --network none \
     echo "=== clonando a instalacao (somente leitura na origem)"
     # --shared: os objetos ficam na instalacao (montada :ro, so leitura); o que
     # este teste escrever vai para /tmp/repo e morre com o container.
-    git clone -q --no-checkout --shared /instalacao /tmp/repo
-    cd /tmp/repo
+    git clone -q --no-checkout --shared /instalacao /tmp/repo  # no-tmp: ok — clone morre com o container
+    cd /tmp/repo  # no-tmp: ok — clone morre com o container
     # Os SHAs ja estao no banco de objetos compartilhado: nada de fetch por ref
     # abreviada (que falha por nao ser um ref, e mascarava a medicao).
     git rev-parse --verify --quiet "${CARD_SHA}^{commit}" >/dev/null || { echo "NAO MEDIDO: $CARD_SHA ausente"; exit 2; }

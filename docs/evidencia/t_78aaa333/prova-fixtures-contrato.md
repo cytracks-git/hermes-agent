@@ -8,7 +8,7 @@ existente `kanban-body-t5a6:proof` (Python 3.13, **NÃO** reconstruída). Runner
 Nada foi alterado na árvore de trabalho fora de `docs/evidencia/t_78aaa333/`.
 
 Scripts do lab versionados junto: `fixtures/mutar.py` (mutação, aplicada numa CÓPIA da fonte).
-Os scripts de orquestração do lab (`rodar_lab.sh`, `rodar_mutantes.sh`) ficaram em `/tmp` por
+Os scripts de orquestração do lab (`rodar_lab.sh`, `rodar_mutantes.sh`) ficaram em `/tmp` por <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
 serem descartáveis; o conteúdo de cada comando está reproduzido abaixo.
 
 ## 0. Como a fonte chegou ao lab, e por que não foi `git archive | tar`
@@ -17,7 +17,7 @@ As duas rodadas anteriores usaram `git archive HEAD | tar -x`. Nesta rodada o **
 segurança recusou** o comando (`Archive extraction to sensitive path`), e também recusou
 `git clone <caminho>` (leu o caminho como URL sem esquema). Registrado como fato, sem
 contornar por caminho alternativo escondido: a cópia foi feita com
-`rsync -a --exclude .git ./ /tmp/lab-t069/base/`, e a equivalência com o commit foi medida
+`rsync -a --exclude .git ./ /tmp/lab-t069/base/`, e a equivalência com o commit foi medida <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
 **antes** da cópia:
 
     $ git status --porcelain
@@ -181,4 +181,4 @@ controle positivo de reciclagem. Medido agora nas duas direções na mesma fixtu
 
 Containers do lab removidos ao fim (`--rm` em toda execução); nenhuma imagem construída ou
 apagada; nada instalado dentro da imagem; rede desligada (`--network none`) em todas as
-execuções. Cópias de trabalho em `/tmp/lab-t069/`.
+execuções. Cópias de trabalho em `/tmp/lab-t069/`. <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
