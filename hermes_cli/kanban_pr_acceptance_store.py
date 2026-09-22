@@ -29,7 +29,8 @@ def prepare_acceptance(conn, task_id, expected_run_id, metadata):
             conn.execute("UPDATE tasks SET completion_contract=? WHERE id=?", (published_pr, task_id))
         snapshot = (run_id, status, published_pr)
         contract = published_pr
-    return snapshot, collect_acceptance(contract, published_pr)
+    accepted_sha = metadata.get("accepted_sha") if isinstance(metadata, dict) else None
+    return snapshot, collect_acceptance(contract, published_pr, accepted_sha=accepted_sha)
 
 
 def record_acceptance(conn, task_id, acceptance):

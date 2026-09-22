@@ -747,6 +747,10 @@ class Task:
     block_kind: Optional[str] = None
     block_recurrences: int = 0               # unblock-loop counter, see BLOCK_RECURRENCE_LIMIT
     completion_contract: Optional[str] = None
+    delivery_status: Optional[str] = None    # n/a|reviewed|awaiting_integration|integrated|...; NULL=unknown
+    applicability: Optional[str] = None
+    accepted_sha: Optional[str] = None
+    local_phase: Optional[str] = None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Task":
@@ -777,6 +781,7 @@ _TASK_OPTIONAL_COLUMNS = (
     "branch_name", "project_id", "tenant", "result", "idempotency_key", "worker_pid",
     "max_runtime_seconds", "last_heartbeat_at", "current_run_id", "workflow_template_id",
     "current_step_key", "max_retries", "session_id", "completion_contract",
+    "delivery_status", "applicability", "accepted_sha", "local_phase",
 )
 # Text columns where "" is stored/read as "not set".
 _TASK_EMPTY_IS_NULL_COLUMNS = (
@@ -2790,6 +2795,8 @@ def complete_task(
             params = (*params, int(expected_run_id))
         if conn.execute(sql, params).rowcount != 1:
             return False
+        from hermes_cli.kanban_delivery_store import apply_delivery_on_complete
+        apply_delivery_on_complete(conn, task_id, acceptance, metadata)
         if isinstance(metadata, dict):
             _stage_completion_artifacts(conn, task_id, metadata, now)
         run_id = _end_run(
