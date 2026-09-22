@@ -821,8 +821,18 @@ def _worker_run_id_for(task_id: str) -> Optional[int]:
         return None
 
 
-def _goal_mode_handoff_rejection(task: Optional[kb.Task], evidence: str):
-    """Goal judge for every terminal worker handoff (including review).
+# Request-review starts independent review. Judging title+body (which often
+# lists that review as acceptance) against this handoff is circular: the
+# missing verdict is the effect of the handoff, not a reason to refuse it.
+# Complete still goes through the judge (author does not close). Coordinator
+# CLI without a worker run uses the same skip — it must not inherit the
+# writer's goal-loop for a review handoff.
+_GOAL_GATE_SKIP_HANDOFFS = frozenset({"review", "review handoff"})
+
+
+def _goal_mode_handoff_rejection(task: Optional[kb.Task], evidence: str, *,
+                                 handoff: str = "completion"):
+    """Goal judge for complete. Request-review is not judged.
 
     Returns ``(verdict, reason_or_None)``: ``"done"`` allows; ``"blocked"`` = judge ruled the goal
     unachievable; ``"continue"``/``"wait"`` reject with the judge's reason. Judge failures allow
@@ -834,6 +844,8 @@ def _goal_mode_handoff_rejection(task: Optional[kb.Task], evidence: str):
     judged unachievable — see #100954).
     """
     if task is None or not task.goal_mode:
+        return ("done", None)
+    if handoff in _GOAL_GATE_SKIP_HANDOFFS:
         return ("done", None)
     try:
         from agent.auxiliary_client import get_text_auxiliary_client
@@ -876,10 +888,14 @@ def _goal_mode_handoff_rejection(task: Optional[kb.Task], evidence: str):
 
 def _goal_gate_error(conn, tid: str, evidence: str, handoff: str, blocked_hint: str,
                      continue_hint: str) -> Optional[str]:
-    """Goal-mode judge gate shared by ``complete`` / ``request-review`` (mirrors tools/kanban_tools.py);
-    applied to every terminal handoff so request-review can't bypass it. Returns the error line, or
-    None to allow."""
-    verdict, rejection = _goal_mode_handoff_rejection(kb.get_task(conn, tid), evidence)
+    """Goal-mode judge gate for ``complete`` (mirrors tools/kanban_tools.py).
+
+    Request-review is not judged: requiring the independent review's verdict
+    before the handoff that starts that review is circular. Returns the error
+    line, or None to allow.
+    """
+    verdict, rejection = _goal_mode_handoff_rejection(
+        kb.get_task(conn, tid), evidence, handoff=handoff)
     if verdict == "blocked":
         return (f"kanban: goal {handoff} of {tid} rejected: judge ruled "
                 f"the goal unachievable — {rejection}. {blocked_hint}")

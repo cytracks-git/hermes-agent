@@ -373,6 +373,8 @@ def _goal_judge_available() -> bool:
 
 
 # Per-tool guidance for a judge rejection: verdict -> message. ``{reason}``/``{tid}`` are filled in.
+# Request-review is not judged (see ``_goal_gate``): requiring the independent
+# review's verdict before the handoff that starts that review is circular.
 _GOAL_GATE_MESSAGES = {
     "kanban_complete": {
         "blocked": (
@@ -382,22 +384,24 @@ _GOAL_GATE_MESSAGES = {
         "continue": (
             "Goal completion rejected by judge: {reason}. To proceed, either: (1) provide "
             "explicit acceptance evidence in your summary matching the task's criteria, or (2) "
-            "create continuation tasks with parents=[{tid}] and keep this task alive.")},
-    "kanban_request_review": {
-        "blocked": (
-            "Goal review handoff rejected: judge ruled the goal unachievable — {reason}. "
-            "Record the block with kanban_block instead of requesting review."),
-        "continue": (
-            "Goal review handoff rejected by judge: {reason}. Provide acceptance evidence "
-            "matching the card before requesting review.")}}
+            "create continuation tasks with parents=[{tid}] and keep this task alive.")}}
+
+# Independent review is the effect of this handoff, not a precondition.
+_GOAL_GATE_SKIP_TOOLS = frozenset({"kanban_request_review"})
 
 
 def _goal_gate(tool_name: str, task, tid: str, evidence: str) -> None:
-    """Goal-mode pre-handoff judge gate: a worker must not complete / request
-    review before acceptance criteria are met. ``blocked`` gets its own
-    guidance; any other non-``done`` verdict gets the ``continue`` guidance.
-    A broken judge fails open (logged) so it cannot permanently wedge work."""
-    if not task or not task.goal_mode or not _goal_judge_available():
+    """Goal-mode pre-complete judge gate: a worker must not complete before
+    acceptance criteria are met. Request-review is not judged — a card that
+    mandates independent review would otherwise refuse the handoff that starts
+    that review. ``blocked`` gets its own guidance; any other non-``done``
+    verdict gets the ``continue`` guidance. A broken judge fails open (logged)
+    so it cannot permanently wedge work."""
+    if not task or not task.goal_mode:
+        return
+    if tool_name in _GOAL_GATE_SKIP_TOOLS:
+        return
+    if not _goal_judge_available():
         return
     try:
         # Headless gate runs outside any agent turn: bind the per-task relay-affinity scope
