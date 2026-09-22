@@ -2913,14 +2913,16 @@ def _get_channel_override(
 
 
 def _resolve_hermes_bin() -> Optional[list[str]]:
-    """Hermes update/restart argv: the running interpreter's ``python -m hermes_cli.main``
-    (exactly this install), else ``hermes`` on PATH, else None. The module argv must win: a
-    PATH-first lookup lets an attacker-planted ``hermes`` shadow the running install when
-    /update or /restart re-execs it (#111569)."""
+    """Hermes update/restart argv: the running interpreter's ``python -P -m hermes_cli.main``
+    (exactly this install; ``-P`` so a Hermes checkout in cwd cannot shadow it), else
+    ``hermes`` on PATH, else None. The module argv must win: a PATH-first lookup lets an
+    attacker-planted ``hermes`` shadow the running install when /update or /restart re-execs
+    it (#111569)."""
     try:
         import importlib.util
         if importlib.util.find_spec("hermes_cli") is not None:
-            return [sys.executable, "-m", "hermes_cli.main"]
+            from hermes_cli._startup_fast import hermes_module_argv
+            return hermes_module_argv()
     except Exception:
         pass
     import shutil
