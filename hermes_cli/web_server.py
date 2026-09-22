@@ -1395,6 +1395,10 @@ def start_server(
     until the ready sentinel is written so its SDK import can't hold the GIL
     against the pre-bind path.
     """
+    # Inclui app direto, serve e dashboard; a identidade pertence ao processo.
+    from hermes_cli.interactive_launch_context import warn_restricted_launch
+
+    warn_restricted_launch()
     _apply_ssh_session_token(ssh_session_token or "")
     _apply_ssh_owner_nonce(ssh_owner_nonce)
 

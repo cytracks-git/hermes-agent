@@ -1592,6 +1592,30 @@ _KANBAN_TERMINAL_STATUSES = {
 }
 
 
+def _provider_unavailable_reason(
+    first_failure_reason: Optional[str],
+    last_failure_reason_fn,
+    *,
+    use_first: bool,
+) -> Optional[str]:
+    """Return a classified provider wall, or None.
+
+    The dispatcher already maps these reasons onto exit 75/78; the Ralph loop
+    must not spend the quality budget judging work that never ran.
+    """
+    from hermes_cli.kanban_db import is_kanban_provider_unavailable
+
+    reason = first_failure_reason if use_first else None
+    if last_failure_reason_fn is not None:
+        try:
+            latest = last_failure_reason_fn()
+        except Exception:
+            latest = None
+        if latest:
+            reason = latest
+    return reason if is_kanban_provider_unavailable(reason) else None
+
+
 def run_kanban_goal_loop(
     *,
     task_id: str,
@@ -1601,6 +1625,8 @@ def run_kanban_goal_loop(
     block_fn,
     max_turns: int = DEFAULT_MAX_TURNS,
     first_response: str = "",
+    first_failure_reason: Optional[str] = None,
+    last_failure_reason_fn=None,
     log=None,
 ) -> Dict[str, Any]:
     """Drive a kanban worker through a Ralph-style goal loop.
@@ -1609,6 +1635,10 @@ def run_kanban_goal_loop(
     ``kanban_block`` / review hand-off); otherwise judge the latest response against ``goal_text``
     (the card's title + body) and feed a continuation or finalize nudge. A WAIT verdict is treated
     as CONTINUE (workers finish via kanban tools, not by parking).
+
+    A classified provider wall (quota/auth/model) on the first turn — or on a later
+    ``run_turn`` — stops immediately without judging empty work and without spending
+    the quality budget. The dispatcher already owns requeue (exit 75) / park (exit 78).
     """
 
     def _log(msg: str) -> None:
@@ -1651,6 +1681,16 @@ def run_kanban_goal_loop(
             # Reclaimed / archived / unexpected — let the dispatcher own it.
             _log(f"kanban goal loop: task {task_id} status={status!r}; stopping")
             return _result("stopped", f"status={status}")
+
+        wall = _provider_unavailable_reason(
+            first_failure_reason, last_failure_reason_fn, use_first=True,
+        )
+        if wall:
+            _log(
+                f"kanban goal loop: provider unavailable ({wall}); "
+                "stopping without judging empty work"
+            )
+            return _result("provider_unavailable", wall)
 
         # The between-turns judge runs outside any agent turn: bind the per-task relay-affinity
         # scope (same shape as the handoff gates) so the relay does not reject the call (#113669).
@@ -1703,6 +1743,15 @@ def run_kanban_goal_loop(
             _log(f"kanban goal loop: run_turn failed ({exc}); stopping")
             return _result("stopped", f"run_turn error: {type(exc).__name__}")
         turns_used += 1
+        wall = _provider_unavailable_reason(
+            None, last_failure_reason_fn, use_first=False,
+        )
+        if wall:
+            _log(
+                f"kanban goal loop: provider unavailable ({wall}); "
+                "stopping without judging empty work"
+            )
+            return _result("provider_unavailable", wall)
 
 
 __all__ = [

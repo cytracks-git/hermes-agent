@@ -234,6 +234,7 @@ class CLIAgentSetupMixin:
         runtime = None
         _model_at_entry = self.model
         self._credentials_rate_limited = False
+        self._last_runtime_error = None
         try:
             # target_model: the ladder's model-keyed rungs (Zen/Go api_mode, Copilot/Nous
             # api_mode) must see the model this CLI will actually send, not config's `default`,
@@ -252,6 +253,7 @@ class CLIAgentSetupMixin:
             from hermes_cli.auth import is_rate_limited_auth_error
             self._credentials_rate_limited = bool(_primary_exc) and is_rate_limited_auth_error(_primary_exc)
             message = format_runtime_provider_error(_primary_exc) if _primary_exc else "Provider resolution failed."
+            self._last_runtime_error = _primary_exc
             if getattr(self, "tool_progress_mode", "full") == "off":
                 print(message, file=sys.stderr)  # quiet/stream-json: stdout is machine-readable
             else:

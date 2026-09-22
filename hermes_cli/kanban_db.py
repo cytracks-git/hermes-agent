@@ -316,6 +316,21 @@ KANBAN_RATE_LIMIT_EXIT_CODE = 75
 # the FIRST occurrence instead of spending ``failure_limit`` identical spawns. 78 == BSD EX_CONFIG.
 KANBAN_TERMINAL_PROVIDER_EXIT_CODE = 78
 
+# ``failure_reason`` values the one-shot worker already maps onto those exits
+# (cli._single_query_exit_code). Shared so a quota/auth wall cannot collapse
+# to the Ralph judge's empty-response ``continue``.
+KANBAN_TRANSIENT_PROVIDER_REASONS = frozenset({
+    "rate_limit", "upstream_rate_limit", "billing", "overloaded", "server_error", "timeout",
+})
+KANBAN_TERMINAL_PROVIDER_REASONS = frozenset({
+    "auth", "auth_permanent", "model_not_found", "ssl_cert_verification", "upstream_blocked",
+})
+
+
+def is_kanban_provider_unavailable(reason: Optional[str]) -> bool:
+    """True when ``failure_reason`` is a provider wall the dispatcher already owns."""
+    return reason in KANBAN_TRANSIENT_PROVIDER_REASONS or reason in KANBAN_TERMINAL_PROVIDER_REASONS
+
 
 def _resolve_crash_grace_seconds() -> int:
     """``HERMES_KANBAN_CRASH_GRACE_SECONDS`` (0 = immediate, for tests) else default."""
@@ -738,6 +753,10 @@ class Task:
     block_kind: Optional[str] = None
     block_recurrences: int = 0               # unblock-loop counter, see BLOCK_RECURRENCE_LIMIT
     completion_contract: Optional[str] = None
+    delivery_status: Optional[str] = None    # n/a|reviewed|awaiting_integration|integrated|...; NULL=unknown
+    applicability: Optional[str] = None
+    accepted_sha: Optional[str] = None
+    local_phase: Optional[str] = None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Task":
@@ -768,6 +787,7 @@ _TASK_OPTIONAL_COLUMNS = (
     "branch_name", "project_id", "tenant", "result", "idempotency_key", "worker_pid",
     "max_runtime_seconds", "last_heartbeat_at", "current_run_id", "workflow_template_id",
     "current_step_key", "max_retries", "session_id", "completion_contract",
+    "delivery_status", "applicability", "accepted_sha", "local_phase",
 )
 # Text columns where "" is stored/read as "not set".
 _TASK_EMPTY_IS_NULL_COLUMNS = (
@@ -2796,6 +2816,8 @@ def complete_task(
             params = (*params, int(expected_run_id))
         if conn.execute(sql, params).rowcount != 1:
             return False
+        from hermes_cli.kanban_delivery_store import apply_delivery_on_complete
+        apply_delivery_on_complete(conn, task_id, acceptance, metadata)
         if isinstance(metadata, dict):
             _stage_completion_artifacts(conn, task_id, metadata, now)
         run_id = _end_run(

@@ -24,11 +24,13 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Optional
 
 from fastapi import (
-    APIRouter, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status as http_status)
+    APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status as http_status)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from starlette.requests import HTTPConnection
 
 from hermes_cli import kanban_db
+from hermes_cli.interactive_launch_context import kanban_launch_restriction
 from hermes_cli.web_read_coalescing import coalesced_read
 from hermes_cli import kanban_db_connect as kbc
 from hermes_cli import kanban_db_notify as kbn
@@ -39,7 +41,17 @@ from hermes_cli.kanban_db import KANBAN_ATTACHMENT_MAX_BYTES, _collision_free_pa
 
 log = logging.getLogger(__name__)
 
-router = APIRouter()
+async def _require_write_identity(request: HTTPConnection) -> None:
+    # A recusa acontece antes de uploads, dispatch ou qualquer efeito do handler.
+    # A guarda de SQLite continua independente desta explicação de superfície.
+    if request.scope["type"] != "http" or request.scope["method"] in {"GET", "HEAD", "OPTIONS"}:
+        return
+    board = _resolve_board(request.query_params.get("board"))
+    if reason := kanban_launch_restriction(board):
+        raise HTTPException(status_code=403, detail=reason)
+
+
+router = APIRouter(dependencies=[Depends(_require_write_identity)])
 
 _BOARD_Q = Query(None, description="Kanban board slug (omit for current)")
 
@@ -337,13 +349,16 @@ async def get_board_endpoint(
     current_step_key: Optional[str] = Query(None, description="Restrict to tasks at this workflow step key"),
 ):
     # Resolve selection before keying so a board switch cannot join an older read.
-    return await _read_board(
+    data = await _read_board(
         tenant=tenant,
         include_archived=include_archived,
         board=board or kanban_db.get_current_board(),
         workflow_template_id=workflow_template_id,
         current_step_key=current_step_key,
     )
+    # Não armazenar identidade em leitura coalescida compartilhada entre requests.
+    reason = kanban_launch_restriction(_resolve_board(board))
+    return {**data, "write_access": {"allowed": reason is None, "reason": reason}}
 
 
 # --- GET /tasks/:id ---------------------------------------------------------

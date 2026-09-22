@@ -3202,6 +3202,8 @@ def _run_kanban_goal_loop_q(cli: "HermesCLI", first_response: str, run_turn=None
     def _quiet_turn(prompt: str) -> str:
         result = cli.agent.run_conversation(user_message=prompt, conversation_history=cli.conversation_history)
         _sync_cli_session_id_from_agent(cli)
+        if isinstance(result, dict):
+            cli._last_turn_result = result
         resp = result.get("final_response", "") if isinstance(result, dict) else str(result)
         if resp:
             print(resp)
@@ -3215,10 +3217,16 @@ def _run_kanban_goal_loop_q(cli: "HermesCLI", first_response: str, run_turn=None
         with _kbc.connect_closing() as c:
             _kb.block_task(c, task_id, reason=reason, expected_run_id=worker_run_id)
 
+    def _last_reason():
+        r = getattr(cli, "_last_turn_result", None)
+        return r.get("failure_reason") if isinstance(r, dict) else None
+
     _run_loop(
         task_id=task_id, goal_text=goal_text, run_turn=run_turn or _quiet_turn,
         task_status_fn=_task_status, block_fn=_block,
         max_turns=task.goal_max_turns or _DEF_TURNS, first_response=first_response or "",
+        first_failure_reason=_last_reason(),
+        last_failure_reason_fn=_last_reason,
         log=log or (lambda m: logger.info("%s", m)),
     )
 
@@ -3241,23 +3249,12 @@ def _sync_cli_session_id_from_agent(cli) -> None:
         cli.session_id = cli.agent.session_id
 
 
-# ``failure_reason`` values that say nothing about the task itself: the provider is walled,
-# down or unreachable, or the account is out of credit, so a Kanban worker signals "try
-# later" instead of "I failed" and the dispatcher does not spend the task's retry budget on it.
-_TRANSIENT_PROVIDER_REASONS = frozenset({
-    "rate_limit", "upstream_rate_limit", "billing", "overloaded", "server_error", "timeout",
-})
-
-# ``failure_reason`` values a retry can never heal: the credential was rejected, the model does
-# not exist for this account, or the TLS chain is broken. A Kanban worker exits
-# ``KANBAN_TERMINAL_PROVIDER_EXIT_CODE`` so the dispatcher parks the card after ONE spawn with
-# the provider's words as the reason, instead of re-spawning into the same wall until
-# ``kanban.failure_limit`` is spent. ``billing`` stays transient: credit comes back.
-# ``upstream_blocked`` (a WAF/CDN refusing the SDK's User-Agent) is terminal too: only a
-# header change heals it, never a retry.
-_TERMINAL_PROVIDER_REASONS = frozenset({
-    "auth", "auth_permanent", "model_not_found", "ssl_cert_verification", "upstream_blocked",
-})
+# Shared with hermes_cli.kanban_db so the Ralph loop and the exit mapper
+# cannot disagree about which failure_reason is a provider wall.
+from hermes_cli.kanban_db import (
+    KANBAN_TRANSIENT_PROVIDER_REASONS as _TRANSIENT_PROVIDER_REASONS,
+    KANBAN_TERMINAL_PROVIDER_REASONS as _TERMINAL_PROVIDER_REASONS,
+)
 
 
 def _single_query_exit_code(result, *, credentials_rate_limited: bool = False) -> int:
@@ -3292,6 +3289,52 @@ def _single_query_exit_code(result, *, credentials_rate_limited: bool = False) -
             from hermes_cli.kanban_db import KANBAN_TERMINAL_PROVIDER_EXIT_CODE
             return KANBAN_TERMINAL_PROVIDER_EXIT_CODE
     return 1
+
+
+def _kanban_goal_loop_allowed(result) -> bool:
+    """False when the first turn was a provider wall or never produced work to judge.
+
+    The Ralph judge fail-opens on an empty response. Feeding it a quota/auth
+    failure burns the whole goal budget and then sticky-blocks as ``exhausted
+    N/N turns``. The dispatcher already owns those walls via exit 75/78.
+    """
+    if not isinstance(result, dict):
+        return False
+    if result.get("interrupted"):
+        return False
+    reason = result.get("failure_reason")
+    if reason in _TRANSIENT_PROVIDER_REASONS or reason in _TERMINAL_PROVIDER_REASONS:
+        return False
+    if result.get("failed") and not result.get("partial"):
+        return False
+    return True
+
+
+def _stamp_preflight_turn_result(cli) -> None:
+    """Classify a credential/init AuthError onto ``_last_turn_result``.
+
+    ``chat()`` returns None without a turn dict when ``_ensure_runtime_credentials``
+    fails, which used to look like an empty response to the Ralph loop. The
+    dispatcher already maps ``failure_reason`` onto exit 75/78.
+    """
+    error = getattr(cli, "_last_runtime_error", None)
+    if error is None:
+        return
+    from hermes_cli.auth import is_rate_limited_auth_error
+
+    if is_rate_limited_auth_error(error):
+        reason = "rate_limit"
+    else:
+        from agent.error_classifier import classify_api_error
+
+        reason = classify_api_error(error).reason.value
+    cli._last_turn_result = {
+        "failed": True,
+        "completed": False,
+        "final_response": "",
+        "error": str(error),
+        "failure_reason": reason,
+    }
 
 
 def _run_quiet_single_query(cli, effective_query, emitter=None):
@@ -3376,6 +3419,8 @@ def _run_quiet_single_query(cli, effective_query, emitter=None):
                 # A teammate's reply displaced the answer this run prints; tell the spawner.
                 _report_turn(result)
         response = result.get("final_response", "") if isinstance(result, dict) else str(result)
+    if isinstance(result, dict):
+        cli._last_turn_result = result
     # Surface backend errors that produced no visible output (e.g. invalid model slug
     # -> provider 4xx) on stderr so piped stdout stays clean.
     if emitter is not None:
@@ -3390,7 +3435,9 @@ def _run_quiet_single_query(cli, effective_query, emitter=None):
 
     # Kanban goal_mode: keep working in THIS session until a judge agrees the card is
     # done, the worker terminates it, or the turn budget runs out (sticky block).
-    if os.environ.get("HERMES_KANBAN_GOAL_MODE") == "1":
+    # A classified provider wall is not "not done yet" — skip the Ralph loop and
+    # let the native 75/78 exit mapper tell the dispatcher.
+    if os.environ.get("HERMES_KANBAN_GOAL_MODE") == "1" and _kanban_goal_loop_allowed(result):
         try:
             _run_kanban_goal_loop_q(cli, response)
         except Exception as _goal_exc:
@@ -3733,8 +3780,10 @@ def _run_single_query_mode(cli, query, image, quiet, oneshot, stream_json: bool 
                         emitter.attach(cli.agent)
                     _run_quiet_single_query(cli, effective_query, emitter=emitter)
 
+            _stamp_preflight_turn_result(cli)
             fail_code = _single_query_exit_code(
-                None, credentials_rate_limited=getattr(cli, "_credentials_rate_limited", False))
+                getattr(cli, "_last_turn_result", None),
+                credentials_rate_limited=getattr(cli, "_credentials_rate_limited", False))
             if emitter is not None:
                 emitter.emit_result({"failed": True, "error": "credentials or agent init failed"},
                                     session_id=cli.session_id or "", exit_code=fail_code)
@@ -3748,7 +3797,7 @@ def _run_single_query_mode(cli, query, image, quiet, oneshot, stream_json: bool 
         # Kanban goal_mode on the `-q` path: same judge loop as `-Q`, but each follow-up turn
         # runs through cli.chat so the worker log keeps its live tool feed (the dispatcher
         # used to force -Q here, which left goal_mode cards with a blank Worker log).
-        if os.environ.get("HERMES_KANBAN_GOAL_MODE") == "1":
+        if os.environ.get("HERMES_KANBAN_GOAL_MODE") == "1" and _kanban_goal_loop_allowed(cli._last_turn_result):
             try:
                 _run_kanban_goal_loop_chat(cli, response or "")
             except Exception as _goal_exc:

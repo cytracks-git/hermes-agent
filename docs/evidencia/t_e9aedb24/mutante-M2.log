@@ -1,0 +1,132 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: not a git repository: /Users/farantes/.hermes/hermes-agent/.git/worktrees/hermes-desktop-launch-boundary
+▶ launching test runner
+Discovered 1 test files (~3 tests) under ['tests/hermes_cli/test_launch_restriction_notice.py']; running with -j 28
+[100.0% |     3/~3 | ✓4 | ✗1] ✗ tests/hermes_cli/test_launch_restriction_notice.py (4✓ 1✗, 2.6s)
+
+  ╔╍ Failed: tests/hermes_cli/test_launch_restriction_notice.py ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+  ║     
+  ║         with pytest.raises(_StopBeforeBind):
+  ║             web_server.start_server(host="127.0.0.1", port=0, open_browser=False)
+  ║     
+  ║         err = capsys.readouterr().err
+  ║ >       assert (KANBAN_RESTRICTED_LAUNCH_MESSAGE in err) is restricted, err
+  ║ E       AssertionError: 
+  ║ E       assert ("Kanban is read-only for this launch: the backend inherited an agent's delegated-worker restrictions. Reading the boar... user terminal, not from an agent tool. Refreshing the page or switching profiles does not change the launch identity." in '') is True
+  ║ 
+  ║ tests/hermes_cli/test_launch_restriction_notice.py:155: AssertionError
+  ║ ------------------------------ Captured log call -------------------------------
+  ║ INFO     hermes_cli.web_server:web_server_dashboard.py:850 Mounted plugin API routes: /api/plugins/hermes-achievements/
+  ║ INFO     hermes_cli.web_server:web_server_dashboard.py:850 Mounted plugin API routes: /api/plugins/kanban/
+  ║ =============================== warnings summary ===============================
+  ║ ../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475
+  ║   /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/nodeids: [Errno 30] Read-only file system: '/repo/pytest-cache-files-ecouh87p'
+  ║     config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+  ║ 
+  ║ ../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429
+  ║   /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/lastfailed: [Errno 30] Read-only file system: '/repo/pytest-cache-files-q40snuo1'
+  ║     config.cache.set("cache/lastfailed", self.lastfailed)
+  ║ 
+  ║ ../usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51
+  ║   /usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/stepwise: [Errno 30] Read-only file system: '/repo/pytest-cache-files-o0292d9b'
+  ║     session.config.cache.set(STEPWISE_CACHE_DIR, [])
+  ║ 
+  ║ -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+  ║ =========================== short test summary info ============================
+  ║ FAILED tests/hermes_cli/test_launch_restriction_notice.py::test_backend_start_server_warns_before_any_bind_side_effect[True]
+  ║ =================== 1 failed, 4 passed, 3 warnings in 2.03s ====================
+  ║
+  ║  Repro: python -m pytest tests/hermes_cli/test_launch_restriction_notice.py
+  ╚╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+
+=== Summary: 1 files, 4 tests passed, 1 failed (100% complete) in 2.6s (28 workers) ===
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 2.6s  (runner wall: 2.6s, parallelism: 28x)
+  P50: 2.60s  P90: 2.60s  P95: 2.60s  P99: 2.60s  Max: 2.60s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+      2.60s  tests/hermes_cli/test_launch_restriction_notice.py
+
+=== Failure output ===
+
+--- tests/hermes_cli/test_launch_restriction_notice.py ---
+/usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.13.15, pytest-8.3.4, pluggy-1.6.0
+rootdir: /repo
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, timeout-2.4.0, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 5 items
+
+tests/hermes_cli/test_launch_restriction_notice.py ...F.                 [100%]
+
+=================================== FAILURES ===================================
+______ test_backend_start_server_warns_before_any_bind_side_effect[True] _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffffae1e8af0>
+capsys = <_pytest.capture.CaptureFixture object at 0xffffae152650>
+fenced_home = PosixPath('/tmp/hermes-pytest-tmproot-cq6_7tsi/pytest-of-unknown/pytest-0/test_backend_start_server_warn0/.hermes')
+restricted = True
+
+    @pytest.mark.parametrize("restricted", [True, False])
+    def test_backend_start_server_warns_before_any_bind_side_effect(
+        monkeypatch, capsys, fenced_home, restricted
+    ):
+        """O backend (`serve`/`dashboard`/app direto) carrega a identidade do PROCESSO.
+    
+        O primeiro efeito real de ``start_server`` é substituído por um sentinela, de
+        modo que nenhum socket abre: se o aviso chegou ao stderr, ele saiu ANTES de
+        qualquer efeito de bind. O predicado de identidade é o de produção.
+        """
+        from hermes_cli import web_server
+    
+        if restricted:
+            monkeypatch.setenv(DELEGATED_CHILD_ENV_MARKER, str(fenced_home))
+    
+        def stop(*_a, **_k):
+            raise _StopBeforeBind
+    
+        monkeypatch.setattr(web_server, "_apply_ssh_session_token", stop)
+    
+        with pytest.raises(_StopBeforeBind):
+            web_server.start_server(host="127.0.0.1", port=0, open_browser=False)
+    
+        err = capsys.readouterr().err
+>       assert (KANBAN_RESTRICTED_LAUNCH_MESSAGE in err) is restricted, err
+E       AssertionError: 
+E       assert ("Kanban is read-only for this launch: the backend inherited an agent's delegated-worker restrictions. Reading the boar... user terminal, not from an agent tool. Refreshing the page or switching profiles does not change the launch identity." in '') is True
+
+tests/hermes_cli/test_launch_restriction_notice.py:155: AssertionError
+------------------------------ Captured log call -------------------------------
+INFO     hermes_cli.web_server:web_server_dashboard.py:850 Mounted plugin API routes: /api/plugins/hermes-achievements/
+INFO     hermes_cli.web_server:web_server_dashboard.py:850 Mounted plugin API routes: /api/plugins/kanban/
+=============================== warnings summary ===============================
+../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475
+  /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:475: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/nodeids: [Errno 30] Read-only file system: '/repo/pytest-cache-files-ecouh87p'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+../usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429
+  /usr/local/lib/python3.13/site-packages/_pytest/cacheprovider.py:429: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/lastfailed: [Errno 30] Read-only file system: '/repo/pytest-cache-files-q40snuo1'
+    config.cache.set("cache/lastfailed", self.lastfailed)
+
+../usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51
+  /usr/local/lib/python3.13/site-packages/_pytest/stepwise.py:51: PytestCacheWarning: could not create cache path /repo/.pytest_cache/v/cache/stepwise: [Errno 30] Read-only file system: '/repo/pytest-cache-files-o0292d9b'
+    session.config.cache.set(STEPWISE_CACHE_DIR, [])
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/hermes_cli/test_launch_restriction_notice.py::test_backend_start_server_warns_before_any_bind_side_effect[True]
+=================== 1 failed, 4 passed, 3 warnings in 2.03s ====================
+
+=== 1 file with test failures (1 test failed) ===
+  tests/hermes_cli/test_launch_restriction_notice.py  (1 test failed)
