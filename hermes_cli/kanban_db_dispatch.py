@@ -400,19 +400,36 @@ def _pid_recycled(pid: Optional[int], started_at) -> bool:
     """True when a live ``pid`` is NOT the process fingerprinted at spawn (or the fingerprint can no
     longer be read). Signalling it would hit a stranger. ``None`` fingerprint = legacy row, never
     recycled; the UNVERIFIED marker is always foreign. An integer fingerprint (rows written before the
-    boot witness was added) compares the start time only."""
+    boot witness was added) compares the start time only.
+
+    Same-host start-time readings drift by ~1 s on macOS (``kern.boottime`` / psutil
+    ``create_time()``, #117505). Exact ``epoch|start`` string equality therefore marks a live
+    worker crashed, duplicates the writer and SIGTERMs in-flight calls. Epoch still has to match
+    exactly (reboot / container recreate); the start tick uses
+    ``start_time_fingerprints_match`` (2 s in the ×100 fingerprint scale).
+    """
     if started_at is None or not pid:
         return False
     if started_at == UNVERIFIED_WORKER_FINGERPRINT:
         return True
+    from gateway.status import get_process_start_time, start_time_fingerprints_match
     if isinstance(started_at, str) and "|" in started_at:
-        return _process_fingerprint(int(pid)) != started_at
-    from gateway.status import _start_times_agree, get_process_start_time
+        current = _process_fingerprint(int(pid))
+        if current is None:
+            return True
+        rec_epoch, _, rec_start = started_at.partition("|")
+        cur_epoch, _, cur_start = current.partition("|")
+        if rec_epoch != cur_epoch:
+            return True
+        try:
+            return not start_time_fingerprints_match(rec_start, cur_start)
+        except (TypeError, ValueError):
+            return True
     current = get_process_start_time(int(pid))
     if current is None:
         return True
     try:
-        return not _start_times_agree(current, started_at)
+        return not start_time_fingerprints_match(current, started_at)
     except (TypeError, ValueError):
         return True
 

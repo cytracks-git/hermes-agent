@@ -149,3 +149,72 @@ def test_unverified_fingerprint_capture_never_authorizes_a_signal(board, monkeyp
     monkeypatch.setattr(kb, "_pid_alive", lambda pid: False)
     assert kb.release_stale_claims(conn, signal_fn=sig) == 1
     assert killed == [] and kb.get_task(conn, tid2).status == "ready"
+
+
+def _live_composed_fingerprint() -> tuple[str, str, int]:
+    live = kbd._process_fingerprint(os.getpid())
+    assert live is not None and "|" in live
+    epoch, start_s = live.split("|", 1)
+    return live, epoch, int(start_s)
+
+
+def _old_composed_exact_recycle(pid: int, started_at: str) -> bool:
+    """Pre-fix comparator: exact ``epoch|start`` string equality (the macOS 1s false-crash)."""
+    return kbd._process_fingerprint(int(pid)) != started_at
+
+
+def test_one_second_macos_drift_keeps_live_composed_worker(board):
+    """Incident class: same boot, start tick drifted 1s (100 centiseconds). Must stay OUR worker.
+
+    Controle positivo: o conserto nao pode acusar o worker vivo. Controle negativo (teste
+    irmao) sabota o tick para fora da tolerancia e o detector tem de acusar.
+    """
+    from gateway.status import START_TIME_DRIFT_TOLERANCE
+
+    conn = board
+    _live, epoch, start = _live_composed_fingerprint()
+    drifted = f"{epoch}|{start - 100}"  # |179007061572 → |179007061472
+    pid = os.getpid()
+
+    assert _old_composed_exact_recycle(pid, drifted) is True  # mutante: classe velha ainda acusa
+    assert kbd._pid_recycled(pid, drifted) is False
+    assert kbd._worker_alive(pid, drifted) is True
+    assert kbd._pid_recycled(pid, f"{epoch}|{start - START_TIME_DRIFT_TOLERANCE}") is False
+
+    tid = _claimed_running(conn, pid=pid, started_at=drifted)
+    assert kbd.detect_crashed_workers(conn) == []
+    task = kb.get_task(conn, tid)
+    assert task is not None and task.status == "running" and task.worker_pid == pid
+
+
+def test_far_or_foreign_composed_fingerprint_still_crashes_the_claim(board):
+    """Controle negativo: corromper o tick (ou o epoch) tem de acusar — senao o check foi desligado."""
+    from gateway.status import START_TIME_DRIFT_TOLERANCE
+
+    conn = board
+    _live, epoch, start = _live_composed_fingerprint()
+    pid = os.getpid()
+    far = f"{epoch}|{start - (START_TIME_DRIFT_TOLERANCE + 1)}"
+    other_boot = f"deadbeef-boot:1|{start}"
+
+    assert kbd._pid_recycled(pid, far) is True
+    assert kbd._worker_alive(pid, far) is False
+    assert kbd._pid_recycled(pid, other_boot) is True
+
+    tid = _claimed_running(conn, pid=pid, started_at=far)
+    assert tid in kbd.detect_crashed_workers(conn)
+    task = kb.get_task(conn, tid)
+    assert task is not None and task.status != "running" and task.worker_pid is None
+
+
+def test_integer_fingerprint_tolerates_one_second_drift_not_an_hour(board):
+    """Linha legada (start time sem epoch) usa a mesma tolerancia, nao igualdade a 0.001."""
+    from gateway.status import get_process_start_time
+
+    start = get_process_start_time(os.getpid())
+    assert start is not None
+    pid = os.getpid()
+    assert kbd._pid_recycled(pid, start - 100) is False
+    assert kbd._worker_alive(pid, start - 100) is True
+    assert kbd._pid_recycled(pid, start - 360000) is True
+    assert kbd._worker_alive(pid, start - 360000) is False
