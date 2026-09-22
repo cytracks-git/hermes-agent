@@ -180,15 +180,15 @@ espera humana. O H1 tem o número dos dois lados para discordar, se for o caso.
 ## Como reproduzir
 
     H=docs/evidencia/t_78aaa333/harness
-    sh $H/arvore-de-prova.sh . /tmp/arvore        # cópia; o worktree não é exposto
-    sh $H/prova-docker.sh    /tmp/arvore /tmp/out $H/alvos-1057.txt recorte
-    sh $H/prova-docker.sh    /tmp/arvore /tmp/out $H/alvos-comuns.txt comuns
-    sh $H/negativo-docker.sh /tmp/arvore /tmp/out     # 10 sabotagens
-    sh $H/sonda-docker.sh    /tmp/arvore NOVA         # o defeito do R3
-    sh $H/indice-docker.sh   /tmp/arvore 1400 200 fim # o índice
-    sh $H/custo-docker.sh    /tmp/arvore 5000 200     # o custo
-    sh $H/redirect-docker.sh /tmp/arvore              # o achado de segurança
-    sh $H/escrita-docker.sh  /tmp/arvore 2000         # o custo de escrita
+    sh $H/arvore-de-prova.sh . /tmp/arvore        # cópia; o worktree não é exposto <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+    sh $H/prova-docker.sh    /tmp/arvore /tmp/out $H/alvos-1057.txt recorte <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+    sh $H/prova-docker.sh    /tmp/arvore /tmp/out $H/alvos-comuns.txt comuns <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+    sh $H/negativo-docker.sh /tmp/arvore /tmp/out     # 10 sabotagens <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+    sh $H/sonda-docker.sh    /tmp/arvore NOVA         # o defeito do R3 <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+    sh $H/indice-docker.sh   /tmp/arvore 1400 200 fim # o índice <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+    sh $H/custo-docker.sh    /tmp/arvore 5000 200     # o custo <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+    sh $H/redirect-docker.sh /tmp/arvore              # o achado de segurança <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+    sh $H/escrita-docker.sh  /tmp/arvore 2000         # o custo de escrita <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
 
 ## O que NÃO foi medido
 

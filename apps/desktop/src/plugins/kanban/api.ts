@@ -25,12 +25,12 @@ import type {
   BoardImportResult,
   BoardMeta,
   BoardsResponse,
+  KanbanApproval,
   KanbanBoard,
   KanbanProfile,
   KanbanProject,
   KanbanTask,
   KanbanTaskDetail,
-  KanbanApproval,
   OrchestrationSettings,
   TaskEstimate,
   WorkerLog

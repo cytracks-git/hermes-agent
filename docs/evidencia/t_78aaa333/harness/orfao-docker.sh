@@ -16,13 +16,16 @@ ARVORE="${1:?arvore no host}"
 ROTULO="${2:?rotulo (ANTIGA|NOVA)}"
 SONDA="$(cd "$(dirname "$0")" && pwd)/sonda_status_desconhecido.py"
 
+# Scratch do container nao-root. TMPDIR do host nao existe dentro da imagem.
+_ctmp=/tmp  # no-tmp: ok — container scratch; host TMPDIR nao monta
+
 echo "=== $ROTULO ($ARVORE)"
 exec docker run --rm --network none \
   -u 502:20 \
   -v "$ARVORE":/work:ro \
   -v "$SONDA":/sonda.py:ro \
-  -w /tmp \
-  -e HOME=/tmp \
+  -w "$_ctmp" \
+  -e HOME="$_ctmp" \
   -e PYTHONPATH=/work \
   -e PYTHONDONTWRITEBYTECODE=1 \
   atlas-prova-t78:harness \

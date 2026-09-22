@@ -28,7 +28,7 @@ Depois das três remoções: `git status --porcelain=v1` vazio e `git diff --exi
 
 Container novo `t78-r550-proof`, rede `none`, fonte do host somente-leitura, nenhum volume de dados nem credencial. Imagem já existente e inspecionada `atlas-prova-t78:harness`, ID `sha256:ab45d35b943737c7d5065f7459a6596a69fc041e32723d2c2563034022d62ce8`. Dependências pertencem à imagem; não se alega imagem reconstruída nesta rodada.
 
-Fonte extraída diretamente de `git archive 13fae88d749` para `/tmp/work` dentro do container. Nada de `.venv`, node_modules ou `.git` do host. `id` devolveu:
+Fonte extraída diretamente de `git archive 13fae88d749` para `/tmp/work` dentro do container. Nada de `.venv`, node_modules ou `.git` do host. `id` devolveu: <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
 
     uid=502 gid=20(dialout) groups=20(dialout)
 

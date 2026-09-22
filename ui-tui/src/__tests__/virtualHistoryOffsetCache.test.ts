@@ -534,14 +534,21 @@ describe('useVirtualHistory offset cache reuse', () => {
       scroll.scrollTo(0)
       await delay(20)
       scroll.scrollTo(5)
+      // Compensation only runs on a settled manual viewport. A fixed delay
+      // is not enough when Ink's deferred unmount lags on a small core pool.
+      await vi.waitFor(() => {
+        expect(scroll.getScrollTop()).toBe(5)
+        expect(scroll.isSticky()).toBe(false)
+      })
       const adjustScrollTop = vi.spyOn(scroll, 'adjustScrollTop')
       const staleHeights = new Map(initialHeights)
 
       staleHeights.set(items[0]!.key, 1)
       instance.rerender(React.createElement(Harness, { expose, initialHeights: staleHeights, items }))
-      await delay(40)
+      await vi.waitFor(() => {
+        expect(adjustScrollTop).toHaveBeenCalledOnce()
+      })
 
-      expect(adjustScrollTop).toHaveBeenCalledOnce()
       expect(adjustScrollTop).toHaveBeenCalledWith(1)
       expect(scroll.getScrollTop()).toBe(6)
       expect(scroll.isSticky()).toBe(false)

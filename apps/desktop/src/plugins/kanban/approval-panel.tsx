@@ -1,6 +1,5 @@
 import { Button, useMutation, useQuery, useQueryClient, useValue } from '@hermes/plugin-sdk'
 
-
 import { $boardSlug, decideApproval, fetchApprovals, retryApprovalNotice, taskKey } from './api'
 import type { ApprovalDiagnostics, KanbanApproval } from './types'
 
@@ -33,6 +32,7 @@ function ApprovalDiagnosticsBlock(
 ) {
   const stamp = (value: null | number) => value ? new Date(value * 1000).toLocaleString() : 'Not observed'
   const attempts = diagnostics.delivery_attempts
+
   return (
     <dl aria-label="Wait diagnostics" className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
       <dt>Stage</dt><dd>{diagnostics.phase_label}</dd>
@@ -58,28 +58,38 @@ function ApprovalItem({ approval, taskId }: { approval: KanbanApproval; taskId: 
 
   const client = useQueryClient()
   const slug = useValue($boardSlug)
+
   const invalidate = () => {
 
     void client.invalidateQueries({ queryKey: ['kanban', 'approvals', slug, taskId] })
     void client.invalidateQueries({ queryKey: taskKey(slug, taskId) })
     void client.invalidateQueries({ queryKey: ['kanban', 'board'] })
   }
+
   const mutation = useMutation({
     mutationFn: (decision: 'granted' | 'denied' | 'cancelled') => decideApproval(taskId, approval, decision),
     onSettled: invalidate
   })
+
   const noticeRetry = useMutation({
     mutationFn: () => retryApprovalNotice(taskId, approval),
     onSettled: invalidate
   })
+
   let payload: Payload
+
   try {
     payload = JSON.parse(approval.payload_json) as Payload
-    if (!Array.isArray(payload.targets) || !Array.isArray(payload.reasons)) throw new Error('Invalid payload')
+
+    if (!Array.isArray(payload.targets) || !Array.isArray(payload.reasons)) {
+      throw new Error('Invalid payload')
+    }
   } catch {
     return <p role="alert">Approval content could not be loaded. No decision is available.</p>
   }
+
   const pending = approval.state === 'pending'
+
   return (
     <article className="flex flex-col gap-2 rounded border border-(--ui-border) p-3">
       <p className="font-medium">{payload.op} · {approval.state}</p>
@@ -125,23 +135,34 @@ function ApprovalItem({ approval, taskId }: { approval: KanbanApproval; taskId: 
 
 export function ApprovalPanel({ taskId, waiting }: ApprovalPanelProps) {
   const slug = useValue($boardSlug)
+
   const query = useQuery({
     queryKey: ['kanban', 'approvals', slug, taskId],
     queryFn: () => fetchApprovals(taskId),
     refetchInterval: waiting ? 2000 : 8000
   })
-  if (query.isPending) return <p role="status">Loading file approvals…</p>
-  if (query.error) return (
-    <div role="alert">
-      <p>File approvals unavailable. Authentication or permission may be required: {String(query.error)}</p>
-      <Button onClick={() => void query.refetch()} size="xs" variant="outline">Retry</Button>
-    </div>
-  )
-  if (!query.data?.approvals.length) return waiting ? <p>No approval request is available. Refresh the task before taking action.</p> : null
+
+  if (query.isPending) {
+    return <p role="status">Loading file approvals…</p>
+  }
+
+  if (query.error) {
+    return (
+      <div role="alert">
+        <p>File approvals unavailable. Authentication or permission may be required: {String(query.error)}</p>
+        <Button onClick={() => void query.refetch()} size="xs" variant="outline">Retry</Button>
+      </div>
+    )
+  }
+
+  if (!query.data?.approvals.length) {
+    return waiting ? <p>No approval request is available. Refresh the task before taking action.</p> : null
+  }
+
   return (
     <section aria-label="File approvals" className="flex flex-col gap-3">
       <h3 className="font-semibold">File approvals</h3>
-      {query.data.approvals.map(approval => <ApprovalItem key={approval.request_id} approval={approval} taskId={taskId} />)}
+      {query.data.approvals.map(approval => <ApprovalItem approval={approval} key={approval.request_id} taskId={taskId} />)}
     </section>
   )
 }

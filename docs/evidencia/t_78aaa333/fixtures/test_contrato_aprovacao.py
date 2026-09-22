@@ -540,7 +540,7 @@ def test_c31_regiao_critica_serializa_entre_processos(tmp_path):
     a = subprocess.Popen([sys.executable, str(script), "threadlock", alvo_t, marca_t], env=env)
     b = subprocess.Popen([sys.executable, str(script), "threadlock", alvo_t, marca_t], env=env)
     assert a.wait(timeout=30) == 0 and b.wait(timeout=30) == 0
-    entraram_thread = open(marca_t).read().count("entrou")
+    entraram_thread = open(marca_t, encoding="utf-8").read().count("entrou")
     assert entraram_thread == 2, (
         "o lock de thread bloqueou entre processos — então a premissa de R-2.1 mudou "
         f"(entraram={entraram_thread}); reavaliar o contrato antes de implementar")
@@ -553,7 +553,7 @@ def test_c31_regiao_critica_serializa_entre_processos(tmp_path):
     d = subprocess.Popen([sys.executable, str(script), "flock", alvo_f, marca_f], env=env)
     rc_c, rc_d = c.wait(timeout=30), d.wait(timeout=30)
     assert {rc_c, rc_d} == {0, 7}, f"flock não serializou: rc={(rc_c, rc_d)}"
-    assert open(marca_f).read().count("entrou") == 1, "dois processos entraram sob flock"
+    assert open(marca_f, encoding="utf-8").read().count("entrou") == 1, "dois processos entraram sob flock"
 
 
 def test_c32_saida_de_waiting_approval_por_verbo_generico_e_recusada(conn):

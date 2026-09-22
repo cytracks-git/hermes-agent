@@ -27,12 +27,15 @@ INSTALACAO=/Users/farantes/.hermes/hermes-agent
 
 [ -d "$INSTALACAO/.git" ] || { echo "NAO MEDIDO: $INSTALACAO sem .git"; exit 2; }
 
+# Scratch do container nao-root. TMPDIR do host nao existe dentro da imagem.
+_ctmp=/tmp  # no-tmp: ok — container scratch; host TMPDIR nao monta
+
 docker run --rm --network none \
   -u 502:20 \
   --entrypoint sh \
   -v "$INSTALACAO":/instalacao:ro \
-  -w /tmp \
-  -e HOME=/tmp \
+  -w "$_ctmp" \
+  -e HOME="$_ctmp" \
   -e SHA="$SHA" \
   -e PYTHONDONTWRITEBYTECODE=1 \
   atlas-prova-t78:harness \
@@ -40,8 +43,8 @@ docker run --rm --network none \
     git config --global --add safe.directory /instalacao
     git config --global user.email prova@atlas.local
     git config --global user.name "Prova t78"
-    git clone -q --no-checkout --shared /instalacao /tmp/repo
-    cd /tmp/repo
+    git clone -q --no-checkout --shared /instalacao /tmp/repo  # no-tmp: ok — clone morre com o container
+    cd /tmp/repo  # no-tmp: ok — clone morre com o container
     git checkout -q "$SHA"
     echo "=== arvore medida: $(git rev-parse HEAD)"
     echo "=== runner canonico (nunca pytest cru)"
