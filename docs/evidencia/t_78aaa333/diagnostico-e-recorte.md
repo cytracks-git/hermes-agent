@@ -26,7 +26,7 @@ Leitura somente de `kanban_notify_subs` no board real confirmou origem TUI/perfi
 
 ## Regeneração e controles
 
-Fonte regenerada com `git archive HEAD` num novo `/tmp/lab` dentro de container descartável, rede desativada e UID/GID do host (não-root). Extraído apenas o teste RED do arquivo preservado. Runner obrigatório `scripts/run_tests.sh`; sem bare pytest.
+Fonte regenerada com `git archive HEAD` num novo `/tmp/lab` dentro de container descartável, rede desativada e UID/GID do host (não-root). Extraído apenas o teste RED do arquivo preservado. Runner obrigatório `scripts/run_tests.sh`; sem bare pytest. <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
 
 Saída real em `regeneracao-red.log`:
 

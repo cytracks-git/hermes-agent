@@ -43,7 +43,7 @@ SUITE_DB = "tests/hermes_cli/test_kanban_db.py"
 
 def roda(alvos: list[str], rotulo: str) -> tuple[int, list[str]]:
     """Executa prova.sh; devolve (rc REAL lido do arquivo, ids de falha)."""
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as fh:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as fh:
         fh.write("\n".join(alvos) + "\n")
         lista = fh.name
     subprocess.run(

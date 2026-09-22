@@ -17,15 +17,15 @@ Saída:
 Container novo `t78-frozen-proof` com o archive somente-leitura, dependências da imagem, `HERMES_TEST_FILE_RETRIES=0` e:
 
     uid=502 gid=20(dialout) groups=20(dialout)
-    test ! -e /tmp/work/.venv
-    test ! -e /tmp/work/node_modules
+    test ! -e /tmp/work/.venv <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+    test ! -e /tmp/work/node_modules <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
 
-Extração: `mkdir /tmp/work && tar -xf /candidate.tar -C /tmp/work`. Nada de venv/node_modules do host. Sem `.git`: o passo auxiliar de precompilação imprime `fatal: not a git repository`; não é o RC do runner nem impediu execução dos testes. Não foi fabricado repositório/base para esconder esse aviso.
+Extração: `mkdir /tmp/work && tar -xf /candidate.tar -C /tmp/work`. Nada de venv/node_modules do host. Sem `.git`: o passo auxiliar de precompilação imprime `fatal: not a git repository`; não é o RC do runner nem impediu execução dos testes. Não foi fabricado repositório/base para esconder esse aviso. <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
 
 Suites COMUNS pelo harness versionado:
 
-    sh /tmp/work/docs/evidencia/t_78aaa333/harness/prova.sh /tmp/work \
-      /tmp/work/docs/evidencia/t_78aaa333/harness/alvos-comuns.txt /tmp/proofs frozen-comuns
+    sh /tmp/work/docs/evidencia/t_78aaa333/harness/prova.sh /tmp/work \ <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+      /tmp/work/docs/evidencia/t_78aaa333/harness/alvos-comuns.txt /tmp/proofs frozen-comuns <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
 
     rotulo=frozen-comuns rc=0 falhas=0
     Summary: 80 files, 605 tests passed, 0 failed, 4 skipped ... in 22.5s
@@ -41,7 +41,7 @@ Integração pelo runner:
     Summary: 5 files, 51 tests passed, 0 failed ... in 36.9s
     rc=0
 
-Mutação: executado `harness/controle_negativo.py` existente, redirecionando apenas seus caminhos fixos RAIZ/HARNESS/SAIDA para `/tmp/work` e `/tmp/proofs/mutantes` via `runpy` (não reescrevendo guardas/testes fora das sabotagens declaradas). Todas as mutações sequenciais, com nenhuma outra suite concorrente nessa árvore. Logs brutos/RC/IDs preservados em `frozen-proofs/mutantes/`.
+Mutação: executado `harness/controle_negativo.py` existente, redirecionando apenas seus caminhos fixos RAIZ/HARNESS/SAIDA para `/tmp/work` e `/tmp/proofs/mutantes` via `runpy` (não reescrevendo guardas/testes fora das sabotagens declaradas). Todas as mutações sequenciais, com nenhuma outra suite concorrente nessa árvore. Logs brutos/RC/IDs preservados em `frozen-proofs/mutantes/`. <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
 
     BASE (sem sabotagem): rc=0 falhas=0
     N12: rc=1 falhas=5 -> ACUSOU

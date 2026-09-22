@@ -70,7 +70,7 @@ O teste de UI verifica ausência de POST antes do clique e exatamente um POST de
 
 ### Interface real regenerada: positivo e negativo
 
-Lab novo `t78-approval-ui`, não-root, home/banco/workspaces descartáveis. FastAPI/dashboard/plugin reais, lifespan desligado para NÃO iniciar provedores/gateway/dispatcher de produção. Bundle web reconstruído. Browser em `http://127.0.0.1:18783/kanban`. Dependência ausente `uvicorn` foi instalada somente no lab em `/tmp/lab/deps` (0.35.0; click 8.5.0, h11 0.16.0). Isso não altera dependências do produto.
+Lab novo `t78-approval-ui`, não-root, home/banco/workspaces descartáveis. FastAPI/dashboard/plugin reais, lifespan desligado para NÃO iniciar provedores/gateway/dispatcher de produção. Bundle web reconstruído. Browser em `http://127.0.0.1:18783/kanban`. Dependência ausente `uvicorn` foi instalada somente no lab em `/tmp/lab/deps` (0.35.0; click 8.5.0, h11 0.16.0). Isso não altera dependências do produto. <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
 
 1. Worker real da fixture, reutilizado de `tests/tools/test_file_approval_worker.py::_worker`, propôs `old\n` → `approved\n`. Drawer mostrou diff/hashes/caminho/run. Um clique em Approve once: `Written and verified.`, estado `consumed`, drawer `running`; eventos atualizados sem reabrir o drawer. Clique → estado visível medido em **2,539 s**, incluindo polling/renderização/CDP. Não é latência pura do worker, SLA nem benchmark.
 2. Outra fixture propôs patch em AGENTS.md E other.txt. Recarreguei a página: a request continuava pending e ambos os diffs voltaram do banco. Um clique Deny: `multi_patch · denied`, drawer `blocked`, contador `Pending approvals: 0`. Clique → estado visível **0,521 s**.

@@ -107,9 +107,9 @@ defeito do teste, e o script termina com RC != 0.
 ```sh
 cd docs/evidencia/t_78aaa333/harness
 docker build -t atlas-prova-t78:harness .
-sh candidato.sh        /tmp/prova-t78   # suítes comuns
-sh candidato-novos.sh  /tmp/prova-t78   # suítes novas
-sh negativo.sh         /tmp/prova-t78   # controle negativo
+sh candidato.sh        /tmp/prova-t78   # suítes comuns <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+sh candidato-novos.sh  /tmp/prova-t78   # suítes novas <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
+sh negativo.sh         /tmp/prova-t78   # controle negativo <!-- no-tmp: ok — recibo historico do lab; apagar /tmp falsificaria a prova -->
 ```
 
 Cada rodada grava `<rotulo>.log`, `<rotulo>.rc` (RC real) e `<rotulo>.ids`

@@ -36,7 +36,7 @@ def main() -> int:
     # deteccao so enxerga ``~`` e ``$HOME`` literais -- e quem escrever o
     # caminho expandido passa direto. Nao da para responder isso por leitura.
     print("REDIRECT --- caminho absoluto de homes plausiveis ---")
-    for home in ("/Users/alguem", "/home/alguem", "/root", "/tmp"):
+    for home in ("/Users/alguem", "/home/alguem", "/root", "/tmp"):  # no-tmp: ok — denylist: detecta /tmp como home insegura
         cmd = f"cat key >> {home}/.ssh/authorized_keys"
         perigoso, chave, _ = detect_dangerous_command(cmd)
         print(f"REDIRECT {'OK' if perigoso else 'NAO_PEGOU'} chave={chave!r} cmd={cmd!r}")

@@ -25,9 +25,9 @@ mkdir -p "$SAIDA"
 exec > "$SAIDA/ui-diagnostico-1057.log" 2>&1
 set -x
 
-export HERMES_HOME=/tmp/lab-1057/home
-export HERMES_KANBAN_DB=/tmp/lab-1057/board.db
-mkdir -p "$HERMES_HOME" /tmp/lab-1057/ws
+export HERMES_HOME=/tmp/lab-1057/home  # no-tmp: ok — lab isolado da prova 1057, fora do HERMES_HOME do host
+export HERMES_KANBAN_DB=/tmp/lab-1057/board.db  # no-tmp: ok — lab isolado da prova 1057, fora do HERMES_HOME do host
+mkdir -p "$HERMES_HOME" /tmp/lab-1057/ws  # no-tmp: ok — lab isolado da prova 1057, fora do HERMES_HOME do host
 cd /work
 
 python3 - <<'PY'
@@ -53,7 +53,7 @@ from tools.approval_context import set_current_session_key
 from tools.file_approval_payload import prepare_payload
 from tools import file_approval_worker as worker
 
-ws = pathlib.Path("/tmp/lab-1057/ws")
+ws = pathlib.Path("/tmp/lab-1057/ws")  # no-tmp: ok — lab isolado da prova 1057, fora do HERMES_HOME do host
 (ws / "AGENTS.md").write_text("old\n")
 db = kb.init_db(db_path=pathlib.Path(os.environ["HERMES_KANBAN_DB"]))
 conn = connect(db)
