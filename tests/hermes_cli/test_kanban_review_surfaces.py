@@ -291,22 +291,36 @@ def test_cli_reopen_review_is_transition_first_and_redacts_reason(
         assert secret not in comments[0].body
 
 
-def test_goal_mode_review_handoff_cannot_bypass_judge(
+def test_goal_mode_review_handoff_is_not_the_complete_judge(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Request-review starts independent review; it must not be refused because
+    that review has not happened yet. Complete on the same stimulus stays gated.
+    """
     home = tmp_path / ".hermes"
     home.mkdir()
     monkeypatch.setenv("HERMES_HOME", str(home))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("HERMES_PROFILE", "builder")
+    (home / "profiles" / "revisor").mkdir(parents=True)
+    (home / "profiles" / "revisor" / "config.yaml").write_text("{}\n")
     kb._INITIALIZED_PATHS.clear()
     kb.init_db()
 
+    circular = (
+        "continue",
+        "mandated independent review has not returned a verdict yet",
+        False,
+        None,
+        False,
+    )
     with kbc.connect() as conn:
         tool_task = kb.create_task(
             conn,
             title="Goal-mode tool task",
             assignee="builder",
+            body="Independent review by revisor is required before close.",
             goal_mode=True,
         )
         claimed = kb.claim_task(conn, tool_task, claimer="builder:1")
@@ -317,31 +331,29 @@ def test_goal_mode_review_handoff_cannot_bypass_judge(
     from tools import kanban_tools as tools
 
     monkeypatch.setattr(tools, "_goal_judge_available", lambda: True)
-    monkeypatch.setattr(
-        tools,
-        "judge_goal",
-        lambda *args, **kwargs: (
-            "continue",
-            "acceptance evidence is missing",
-            False,
-            None,
-            False,
-        ),
-    )
-    rejected = json.loads(tools._handle_request_review({"summary": "Looks ready."}))
-    assert "error" in rejected
-    assert "rejected by judge" in rejected["error"]
+    monkeypatch.setattr(tools, "judge_goal", lambda *args, **kwargs: circular)
+
+    refused_complete = json.loads(tools._handle_complete({"summary": "Looks ready."}))
+    assert "error" in refused_complete
+    assert "rejected by judge" in refused_complete["error"]
+
+    accepted = json.loads(tools._handle_request_review({
+        "summary": "Looks ready.",
+        "reviewer": "revisor",
+    }))
+    assert accepted.get("ok") is True, accepted
     with kbc.connect() as conn:
         tool_after = kb.get_task(conn, tool_task)
         assert tool_after is not None
-        assert tool_after.status == "running"
+        assert tool_after.status == "review"
+        assert tool_after.assignee == "revisor"
 
-    # The shell/CLI path applies the same gate and must not bypass the tool.
     with kbc.connect() as conn:
         cli_task = kb.create_task(
             conn,
             title="Goal-mode CLI task",
             assignee="builder",
+            body="Independent review by revisor is required before close.",
             goal_mode=True,
         )
         cli_claimed = kb.claim_task(conn, cli_task, claimer="builder:2")
@@ -357,17 +369,17 @@ def test_goal_mode_review_handoff_cannot_bypass_judge(
         "get_text_auxiliary_client",
         lambda purpose: (object(), "judge-model"),
     )
-    monkeypatch.setattr(
-        goals,
-        "judge_goal",
-        lambda *args, **kwargs: ("continue", "tests are missing", False, None, False),
+    monkeypatch.setattr(goals, "judge_goal", lambda *args, **kwargs: circular)
+    output = kc.run_slash(
+        f"request-review {cli_task} --summary 'Looks ready.' --reviewer revisor"
     )
-    output = kc.run_slash(f"request-review {cli_task} --summary 'Looks ready.'")
-    assert "rejected by judge" in output
+    assert "rejected by judge" not in output
+    assert "Requested review" in output
     with kbc.connect() as conn:
         cli_after = kb.get_task(conn, cli_task)
         assert cli_after is not None
-        assert cli_after.status == "running"
+        assert cli_after.status == "review"
+        assert cli_after.assignee == "revisor"
 
 
 def test_goal_loop_stops_after_reviewer_requests_changes(

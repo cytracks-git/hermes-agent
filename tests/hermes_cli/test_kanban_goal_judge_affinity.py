@@ -61,6 +61,31 @@ def test_tool_gate_transport_failure_fails_open_but_genuine_verdict_rejects():
                 kanban_tools._goal_gate("kanban_complete", _task(), "task-1", "ev")
 
 
+def test_review_handoff_skips_judge_but_complete_still_rejects():
+    """Same continue-verdict stimulus: request-review allows, complete accuses.
+
+    Re-applying the judge to request-review is the circular defect; dropping
+    the complete gate would make the second half go quiet.
+    """
+    with _aux_client(), patch("hermes_cli.goals.judge_goal", return_value=_GENUINE_CONTINUE) as judge:
+        assert kanban_cli._goal_mode_handoff_rejection(
+            _task(), "commit abc tests green", handoff="review handoff",
+        ) == ("done", None)
+        judge.assert_not_called()
+        assert kanban_cli._goal_mode_handoff_rejection(
+            _task(), "commit abc tests green",
+        ) == ("continue", "goal not met yet")
+        judge.assert_called_once()
+
+    with patch.object(kanban_tools, "_goal_judge_available", return_value=True):
+        with patch.object(kanban_tools, "judge_goal", return_value=_GENUINE_CONTINUE) as tool_judge:
+            kanban_tools._goal_gate("kanban_request_review", _task(), "task-1", "ev")
+            tool_judge.assert_not_called()
+            with pytest.raises(kanban_tools._Reject):
+                kanban_tools._goal_gate("kanban_complete", _task(), "task-1", "ev")
+            tool_judge.assert_called_once()
+
+
 def test_cli_gate_binds_per_task_affinity_scope():
     """Headless judge call runs under kanban:<task_id>; a bound scope is kept."""
     seen = []
