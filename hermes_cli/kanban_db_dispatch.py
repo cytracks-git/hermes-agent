@@ -149,9 +149,17 @@ class DispatchResult:
     telemetry can tell "stuck" from "correctly idle"."""
     route_blocked: list[tuple[str, str, str]] = field(default_factory=list)
     """``(task_id, assignee, kind)`` de cards NÃO despachados porque a rota do
-    perfil está comprovadamente morta (credencial ausente/vencida sem refresh,
-    modelo aposentado). Operator-actionable: o card foi parado ANTES de gastar
-    um run, com a causa gravada como motivo do bloqueio."""
+    perfil está comprovadamente morta: credencial revogada (``relogin_required``),
+    vencida sem ``refresh_token``, ou modelo declarado aposentado. Ausência de
+    credencial NÃO entra aqui — é fail-open. Operator-actionable: o card foi parado
+    ANTES de gastar um run, com a causa gravada como motivo do bloqueio."""
+    shared_quota: dict[str, list[str]] = field(default_factory=dict)
+    """``{provider: [perfis]}`` para providers com MAIS DE UM perfil apontado —
+    item 4 do card t_38817b72. N perfis numa assinatura só produzem FILA COM CARA
+    DE PARALELISMO: ``max_in_progress`` promete N workers, o teto de cota é um.
+    Medido neste tick, não configurado. Provider com um perfil só não aparece:
+    diagnóstico não inventa alarme. NÃO é operator-actionable por card — é o
+    contexto que explica por que o board parece travado sem erro."""
     skipped_per_profile_capped: list[tuple[str, str, int]] = field(default_factory=list)
     """``(task_id, assignee, current_running_count)`` deferred because the
     assignee is at ``kanban.max_in_progress_per_profile``. Picked up on a later
@@ -195,9 +203,15 @@ def describe_suppression(results: Iterable[Optional["DispatchResult"]]) -> str:
     CLI daemon and the embedded gateway dispatcher, which otherwise report a
     bare zero-spawn count while ``hermes kanban tail`` is the only place the
     guard reason is written (#111910).
+
+    ``shared_quota`` rides along (#t_38817b72): when several profiles share one
+    subscription, a stuck queue with no error at all is the EXPECTED shape —
+    the parallelism the caps promise does not exist. Naming it here is what
+    turns "dispatcher stuck, cause unknown" into an actionable line.
     """
     counts: dict[str, int] = {}
     pressure: Optional[str] = None
+    shared: dict = {}
     for res in results:
         if res is None:
             continue
@@ -205,14 +219,32 @@ def describe_suppression(results: Iterable[Optional["DispatchResult"]]) -> str:
             counts[reason] = counts.get(reason, 0) + 1
         if res.rate_limited:
             counts["rate_limited"] = counts.get("rate_limited", 0) + len(res.rate_limited)
+        if res.route_blocked:
+            counts["route_blocked"] = counts.get("route_blocked", 0) + len(res.route_blocked)
         if res.skipped_locked:
             counts["skipped_locked"] = counts.get("skipped_locked", 0) + 1
         if res.memory_pressure:
             pressure = res.memory_pressure
+        if getattr(res, "shared_quota", None):
+            shared = res.shared_quota
     parts = [f"{k}={v}" for k, v in sorted(counts.items())]
     if pressure:
         parts.append(f"memory_pressure={pressure}")
+    if shared:
+        linha = _describe_shared_quota(shared)
+        if linha:
+            parts.append(f"shared quota: {linha}")
     return ", ".join(parts)
+
+
+def _describe_shared_quota(grupos: dict) -> str:
+    """Formata o agrupamento de cota, tolerante a import quebrado."""
+    try:
+        from hermes_cli.kanban_route_preflight import describe_shared_quota
+
+        return describe_shared_quota(grupos)
+    except Exception:
+        return ""
 
 
 # Bounded registry of recently-reaped worker exits, filled by the reap loop in
@@ -2224,6 +2256,22 @@ def _route_preflight(assignee: str):
         return SimpleNamespace(ok=True, kind="unknown", reason=None)
 
 
+def _shared_quota_groups() -> dict:
+    """Agrupamento de cota compartilhada (#t_38817b72), tolerante a import quebrado.
+
+    Mesmo contrato defensivo de :func:`_route_preflight`: diagnóstico não pode
+    derrubar o tick. Falhou, o dispatcher segue sem a linha de contexto.
+    """
+    try:
+        from hermes_cli.kanban_route_preflight import shared_quota_groups
+
+        return shared_quota_groups()
+    except Exception:
+        # Sem logger neste módulo (mesmo contrato de _route_preflight): o tick
+        # segue sem a linha de contexto, que é diagnóstico, não execução.
+        return {}
+
+
 def _block_task_for_dead_route(conn: sqlite3.Connection, task_id: str, route) -> None:
     """Para o card com a causa da rota morta, sem abrir nem fechar run.
 
@@ -2272,11 +2320,16 @@ def _dispatch_lane_task(
     if profile_exists is not None and not profile_exists(assignee):
         result.skipped_nonspawnable.append(task_id)
         return False
-    # Preflight de rota (#t_38817b72): credencial ausente/vencida sem refresh, ou
-    # modelo declarado aposentado, matam o worker logo no startup. Medido no board
-    # atlas: 39 runs em 7 dias queimados assim. Bloquear o card com a causa é mais
-    # honesto que despachá-lo para morrer — e não gasta run nem breaker. O veredito
-    # só reprova com evidência lida no disco; na dúvida autoriza (ver o módulo).
+    # Preflight de rota (#t_38817b72): credencial REVOGADA (exige novo login) ou
+    # VENCIDA sem refresh_token, e modelo declarado aposentado, matam o worker logo
+    # no startup. Medido no board atlas: 39 runs em 7 dias queimados assim. Bloquear
+    # o card com a causa é mais honesto que despachá-lo para morrer — e não gasta run
+    # nem breaker.
+    #
+    # AUSÊNCIA DE CREDENCIAL NÃO REPROVA (fail-open deliberado): a assinatura pode ser
+    # servida por fora do auth store — medido neste host, reprovar por ausência dava
+    # ok=False em 5/5 perfis, inclusive o que estava executando, e pararia o board.
+    # Só reprova com evidência positiva lida no disco; na dúvida autoriza (ver o módulo).
     route = _route_preflight(assignee)
     if not route.ok:
         if not dry_run:
@@ -2571,6 +2624,11 @@ def _dispatch_once_locked(
     the PID so later ticks catch crashes before the TTL. Cap semantics:
     :func:`_tick_spawn_budget`."""
     result = DispatchResult()
+    # Cota compartilhada (#t_38817b72 item 4): N perfis numa assinatura só. Medido
+    # a cada tick (cacheado 60s no módulo de preflight), ANTES de qualquer retorno
+    # antecipado — é justamente no tick que não despacha nada que o operador
+    # precisa saber que o paralelismo prometido não existe.
+    result.shared_quota = _shared_quota_groups()
     _run_reclaim_phase(
         conn, result, stale_timeout_seconds=stale_timeout_seconds,
         failure_limit=failure_limit, reconcile_orphans=reconcile_orphans, board=board,

@@ -242,7 +242,37 @@ def check_route(profile: str) -> RouteVerdict:
         return _UNKNOWN
 
 
-def shared_quota_groups() -> dict:
+# Cache do agrupamento de cota: a função roda a CADA tick do dispatcher (5s por
+# padrão) e abre+parseia o ``config.yaml`` de todo perfil. O que custa é o parse,
+# não o ``stat``, então a chave do cache é a ASSINATURA DE MTIME dos arquivos
+# lidos: enquanto ninguém edita, devolve o medido; editou, a próxima chamada
+# remede. Sem TTL adivinhado — TTL cego fossilizaria a rota por N segundos
+# depois de o operador já ter corrigido, e vazaria entre HERMES_HOME distintos.
+_quota_cache: dict = {"key": None, "value": None}
+
+
+def _quota_cache_key() -> tuple:
+    """``(home, ((perfil, mtime_ns), ...))`` — o que invalida a medição.
+
+    Perfil sem ``config.yaml`` entra com ``-1``: criar ou remover o arquivo é
+    mudança de rota e precisa invalidar tanto quanto editá-lo.
+    """
+    home = _hermes_home()
+    itens: list = []
+    perfis = ["default"]
+    root = home / "profiles"
+    if root.is_dir():
+        perfis += sorted(p.name for p in root.iterdir() if p.is_dir())
+    for perfil in perfis:
+        cfg = _profile_dir(perfil) / "config.yaml"
+        try:
+            itens.append((perfil, cfg.stat().st_mtime_ns))
+        except OSError:
+            itens.append((perfil, -1))
+    return (str(home), tuple(itens))
+
+
+def shared_quota_groups(*, use_cache: bool = True) -> dict:
     """``{provider: [perfis]}`` para providers com MAIS DE UM perfil apontado.
 
     Item 4 do card t_38817b72: cota compartilhada é invisível hoje. Medido neste
@@ -254,7 +284,12 @@ def shared_quota_groups() -> dict:
 
     Só relata o que mediu nos ``config.yaml``: provider com um perfil só não
     aparece. Nunca levanta exceção — é diagnóstico, não caminho de execução.
+
+    ``use_cache=False`` força releitura do disco (testes e CLI de inspeção).
     """
+    key = _quota_cache_key()
+    if use_cache and _quota_cache["value"] is not None and _quota_cache["key"] == key:
+        return dict(_quota_cache["value"])
     grupos: dict = {}
     try:
         perfis = ["default"]
@@ -268,4 +303,25 @@ def shared_quota_groups() -> dict:
     except Exception:
         logger.debug("shared_quota_groups falhou", exc_info=True)
         return {}
-    return {prov: nomes for prov, nomes in grupos.items() if len(nomes) > 1}
+    compartilhados = {prov: nomes for prov, nomes in grupos.items() if len(nomes) > 1}
+    _quota_cache["value"] = compartilhados
+    _quota_cache["key"] = key
+    return dict(compartilhados)
+
+
+def describe_shared_quota(grupos: dict) -> str:
+    """Uma linha para o operador, ou ``""`` quando ninguém compartilha.
+
+    ``anthropic=4 profiles (arquiteto, default, executor, pesquisa)`` — formato
+    estável para o tick do CLI e o warn de dispatcher parado. Texto em inglês:
+    é superfície que o operador lê (regra 12-G).
+    """
+    if not isinstance(grupos, dict) or not grupos:
+        return ""
+    partes = []
+    for prov in sorted(grupos):
+        nomes = grupos[prov]
+        if not isinstance(nomes, list) or len(nomes) < 2:
+            continue
+        partes.append(f"{prov}={len(nomes)} profiles ({', '.join(sorted(nomes))})")
+    return "; ".join(partes)
