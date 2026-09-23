@@ -222,7 +222,8 @@ nomeando exatamente o que se perdeu (c1979, c1980, c1981).
 
 `hermes kanban edit` recusou: `delegate_task child contexts cannot mutate Kanban tasks`
 (`HERMES_DELEGATED_CHILD_CONTEXT` setado nesta sessão). A guarda é legítima e **não a
-contornei**. O texto pronto está em `/tmp/corpos-nao-medido/{t_93ec4f92,t_836be40f,t_c505c2cc}.md`;
+contornei**. O texto pronto foi preservado nos arquivos versionados
+`docs/evidencia/t_00542312/{t_93ec4f92,t_836be40f,t_c505c2cc}.md`;
 quem tiver sessão não-delegada cola no corpo. Enquanto isso, **`t_c505c2cc` segue em
 `ready` e reclamável com spec mutilada** — é o risco aberto desta entrega.
 

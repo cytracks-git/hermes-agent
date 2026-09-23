@@ -12,6 +12,7 @@ import sys, pathlib, sqlite3
 
 sys.path.insert(0, "/w")
 from hermes_cli import kanban_db, kanban_db_connect
+from hermes_constants import get_scratch_dir
 
 MARCADOR = (
     "⟪HERMES-CONTEXT-COMPRESSION: 5,455 of 5,655 chars omitted here by Hermes's "
@@ -25,7 +26,7 @@ CORPO_TRUNCADO = HEAD + MARCADOR
 CORPO_INTEIRO = "## Especificação completa\n\n" + ("Conteúdo real e íntegro do card. " * 180)
 
 modo = sys.argv[1]
-db = pathlib.Path(f"/tmp/prova-{modo}.db")
+db = get_scratch_dir() / f"prova-{modo}.db"
 db.unlink(missing_ok=True)
 conn = kanban_db_connect.connect(db)
 
