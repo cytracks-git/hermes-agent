@@ -2438,8 +2438,14 @@ def _rotate_worker_log(
 
 def _module_hermes_argv() -> list[str]:
     """Interpreter-bound Hermes CLI invocation (``hermes_cli.main`` is the
-    console-script target — there is no top-level ``hermes`` package)."""
-    return [sys.executable, "-m", "hermes_cli.main"]
+    console-script target — there is no top-level ``hermes`` package).
+
+    ``-P`` keeps a workspace checkout from shadowing this install when the
+    worker is spawned with ``cwd=workspace``.
+    """
+    from hermes_cli._startup_fast import hermes_module_argv
+
+    return hermes_module_argv()
 
 
 def _absolute_hermes_path(path: str) -> str:
@@ -2503,9 +2509,9 @@ def _hermes_path_argv(path: str) -> list[str]:
 def _resolve_hermes_argv() -> list[str]:
     """Resolve the ``hermes`` invocation as argv for ``Popen``: ``$HERMES_BIN``
     (path-like -> absolute; bare names keep PATH semantics, never a
-    same-directory file), then the running interpreter's ``sys.executable -m
-    hermes_cli.main`` (exactly this install; also covers shim-less cron,
-    systemd ``User=``, launchd), then ``which("hermes")`` (Windows: safe PATH
+    same-directory file), then the running interpreter's ``sys.executable -P -m
+    hermes_cli.main`` (exactly this install, cwd cannot shadow it; also covers
+    shim-less cron, systemd ``User=``, launchd), then ``which("hermes")`` (Windows: safe PATH
     search, batch shims fall back to the module form) only when ``hermes_cli``
     is not importable. The module argv must win over PATH: a PATH-first lookup
     lets an attacker-planted ``hermes`` shadow the running install (#111569).

@@ -16,7 +16,7 @@ __all__ = [
     "is_termux_fast_version_argv", "is_global_fast_version_argv",
     "is_container_startup_environment", "active_profile_may_override_home",
     "container_mode_may_be_active", "read_openai_version", "read_install_method",
-    "print_fast_version_info", "try_fast_version",
+    "print_fast_version_info", "try_fast_version", "hermes_module_argv",
 ]
 
 
@@ -27,6 +27,22 @@ def _read_text(path: str) -> str | None:
             return handle.read()
     except (OSError, UnicodeDecodeError):
         return None
+
+
+def hermes_module_argv() -> list[str]:
+    """Argv for this interpreter's Hermes CLI that does not let cwd shadow it.
+
+    ``python -m`` prepends cwd onto ``sys.path`` (PEP 670). Kanban workers and
+    gateway re-exec often run with cwd set to a task workspace; a workspace that
+    is itself a Hermes checkout would then load that tree's ``hermes_cli`` /
+    ``cli`` instead of this install. ``-P`` (``sys.flags.safe_path``) disables
+    the prepend. It is an interpreter flag, not ``PYTHONSAFEPATH``, so child
+    processes the worker starts do not inherit it.
+
+    requires-python is ``>=3.11``, so ``-P`` is always available. An explicit
+    ``$HERMES_BIN`` path is a different argv shape and is not wrapped here.
+    """
+    return [sys.executable, "-P", "-m", "hermes_cli.main"]
 
 
 def project_root_str() -> str:
