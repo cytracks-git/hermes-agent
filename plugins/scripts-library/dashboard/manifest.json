@@ -1,0 +1,13 @@
+{
+  "name": "scripts-library",
+  "label": "Scripts",
+  "description": "Read-only library of the scripts already on disk — what each one does, how to run it, its dependencies and tests, and whether it is committed, reviewed and published",
+  "icon": "FileCode",
+  "version": "1.0.0",
+  "tab": {
+    "path": "/scripts-library",
+    "hidden": true
+  },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}
