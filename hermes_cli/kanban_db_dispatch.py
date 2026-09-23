@@ -70,6 +70,19 @@ _RESPAWN_BLOCKER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Outcomes cujo run posterior SUPERA um ``last_failure_error`` antigo: o worker
+# chegou ao fim e fez uma transição terminal por conta própria, então qualquer
+# texto de falha ainda gravado é resíduo de uma tentativa anterior — não um
+# diagnóstico do estado atual do card. ``crashed`` entra aqui por outro motivo
+# (o texto persistido inclui o stdout capturado do worker, que é contexto e não
+# diagnóstico — #117097). Sem isso, um texto de quota de 22/09 mantinha
+# ``blocker_auth`` para sempre num card cujo último run foi ``blocked``: a
+# proteção de ``rate_limited`` só olha o ``latest_run``, e ao ser superada por
+# um run de outra natureza a armadilha descrita no docstring abaixo se fechava.
+_RESPAWN_BLOCKER_SUPERSEDING_OUTCOMES = frozenset({
+    "completed", "review_requested", "changes_requested", "blocked", "crashed",
+})
+
 # Within this window a completed run counts as "recent proof"; don't re-spawn.
 _RESPAWN_GUARD_SUCCESS_WINDOW = 3600  # 1 hour
 
@@ -112,6 +125,11 @@ class DispatchResult:
     reconciled_orphans: list[str] = field(default_factory=list)
     """``running`` cards requeued by :func:`reconcile_orphaned_running` (broken
     claim bookkeeping, dead/gone worker)."""
+    released_parked_claims: list[str] = field(default_factory=list)
+    """Cards FORA de voo (``ready``/``review``/``todo``/...) cuja claim residual
+    foi limpa por :func:`reconcile_parked_claim_residue`. Sem isso o card fica
+    invisível para ``_lane_rows`` (que exige ``claim_lock IS NULL``) e nenhuma
+    varredura de reclaim o alcança — todas filtram ``status='running'``."""
     reaped_terminal_workers: list[str] = field(default_factory=list)
     """Task ids whose worker outlived its closed run and was terminated by
     :func:`reap_terminal_workers`."""
@@ -939,6 +957,88 @@ def reconcile_orphaned_running(conn: sqlite3.Connection) -> list[str]:
     return reconciled
 
 
+# Lanes onde um worker PODE estar legitimamente segurando a claim. ``running`` é
+# o voo normal (as varreduras de reclaim acima o cobrem) e ``waiting_approval``
+# zera a identidade de propósito (``pause_for_approval``), restaurando-a em
+# ``resume_from_pause``. Em QUALQUER outra lane a claim é resíduo: ninguém está
+# em voo, e o CAS de ``_claim_and_open_run`` exige ``claim_lock IS NULL``.
+_CLAIM_IN_FLIGHT_STATUSES = ("running", "waiting_approval")
+
+
+def reconcile_parked_claim_residue(conn: sqlite3.Connection) -> list[str]:
+    """Limpa claim residual em card FORA de voo; devolve os ids destravados.
+
+    Fecha a classe que ``reconcile_orphaned_running`` deixou aberta. Toda
+    varredura de reclaim filtra ``status='running'``
+    (``release_stale_claims``, ``detect_crashed_workers``, ``enforce_max_runtime``,
+    ``detect_stale_running``), e ``_lane_rows`` só enumera
+    ``claim_lock IS NULL``. Logo um card devolvido a ``ready``/``review``/``todo``
+    SEM zerar a claim some do dispatch e não tem quem o limpe: some do board para
+    sempre, sem sensor. Medido no board atlas: 6 cards em ``ready`` com
+    ``claim_lock`` de um pid morto há 3+ dias.
+
+    Zera apenas a escrituração da claim (``claim_lock``/``claim_expires``/
+    ``worker_pid``/``worker_started_at``/``last_heartbeat_at``); o ``status`` NÃO
+    é tocado — o card já está na lane que alguém escolheu, e promover por conta
+    própria seria decidir roteamento. Um pid host-local ainda vivo e com
+    fingerprint casando é deferido (nunca se solta uma claim ao lado de um
+    processo vivo); pid morto, ausente, reciclado ou de outro host é resíduo.
+    """
+    now = int(time.time())
+    released: list[str] = []
+    placeholders = ", ".join("?" for _ in _CLAIM_IN_FLIGHT_STATUSES)
+    rows = conn.execute(
+        "SELECT id, status, claim_lock, claim_expires, worker_pid, worker_started_at "
+        "FROM tasks "
+        f"WHERE status NOT IN ({placeholders}) "
+        "  AND (claim_lock IS NOT NULL OR claim_expires IS NOT NULL "
+        "       OR worker_pid IS NOT NULL)",
+        _CLAIM_IN_FLIGHT_STATUSES,
+    ).fetchall()
+    host_prefix = _kb._host_prefix()
+    for row in rows:
+        tid = row["id"]
+        pid = row["worker_pid"]
+        host_local = str(row["claim_lock"] or "").startswith(host_prefix)
+        if (pid and host_local
+                and _worker_alive(pid, _kb._row_get(row, "worker_started_at"))):
+            # Processo vivo desta máquina: soltar a claim abriria espaço para um
+            # segundo worker ao lado dele. Tenta de novo no próximo tick.
+            _kb._log.debug(
+                "kanban reconcile: task %s (%s) carrega claim residual mas o "
+                "pid %s está vivo neste host — deferindo", tid, row["status"], pid,
+            )
+            continue
+        with _kb.write_txn(conn):
+            cur = conn.execute(
+                "UPDATE tasks SET claim_lock = NULL, claim_expires = NULL, "
+                "worker_pid = NULL, worker_started_at = NULL, "
+                "last_heartbeat_at = NULL "
+                f"WHERE id = ? AND status NOT IN ({placeholders}) "
+                "  AND claim_lock IS ? AND claim_expires IS ? AND worker_pid IS ?",
+                (tid, *_CLAIM_IN_FLIGHT_STATUSES,
+                 row["claim_lock"], row["claim_expires"], pid),
+            )
+            if cur.rowcount != 1:
+                continue
+            payload = {
+                "reason": "parked_claim_residue",
+                "status": row["status"],
+                "claim_lock": row["claim_lock"],
+                "claim_expires": _kb._opt_int(row["claim_expires"]),
+                "worker_pid": _kb._opt_int(pid),
+                "host_local": host_local,
+                "now": now,
+            }
+            _kb._append_event(conn, tid, "reconciled", payload)
+            released.append(tid)
+        _kb._log.info(
+            "kanban reconcile: claim residual limpa em %s (status=%s, "
+            "claim_lock=%r, worker_pid=%r)", tid, row["status"], row["claim_lock"], pid,
+        )
+    return released
+
+
 def _error_fingerprint(error_text: str) -> str:
     """Normalize an error message (strip PIDs, timestamps) so same-root-cause errors group."""
     fp = re.sub(r'\bpid \d+\b', 'pid N', error_text[:80])
@@ -1540,7 +1640,9 @@ def check_respawn_guard(
     integrated/verified/installed, so a leftover in review/ready must not take
     a worker. The review lane still skips recent_success/active_pr: they are
     the *inputs* to a review handoff. Stale / dead claim locks are NOT a guard
-    reason — the reclaim passes own those.
+    reason — the reclaim passes own those
+    (:func:`reconcile_parked_claim_residue` for a card parked outside the
+    running lane).
     """
     row = conn.execute(
         "SELECT last_failure_error, delivery_status FROM tasks WHERE id = ?",
@@ -1587,9 +1689,19 @@ def check_respawn_guard(
     # crash is different: its persisted error includes the worker's last
     # captured output, which is context rather than a diagnosis and may contain
     # benign commands such as ``claude auth status`` (#117097).
+    #
+    # Um run POSTERIOR de natureza terminal (o worker chegou ao fim e transicionou
+    # sozinho) supera o texto: ele descreve uma tentativa que já foi vencida. Sem
+    # este corte, o texto de quota que a requeue de ``rate_limited`` carimba
+    # sobrevive ao próximo run e devolve ``blocker_auth`` para sempre — a proteção
+    # de ``rate_limited`` acima só olha o ``latest_run``, então basta um run de
+    # outra natureza chegar depois para ela evaporar (medido no board atlas:
+    # t_03aac2e3, parqueado desde 22/09 com texto de quota e último run ``blocked``).
     err = _kb._lossy_text(row["last_failure_error"])
     latest_outcome = latest_run["outcome"] if latest_run is not None else None
-    if err and latest_outcome != "crashed" and _RESPAWN_BLOCKER_RE.search(err):
+    if (err
+            and latest_outcome not in _RESPAWN_BLOCKER_SUPERSEDING_OUTCOMES
+            and _RESPAWN_BLOCKER_RE.search(err)):
         return "blocker_auth"
 
     # Review-lane spawns stop here: a recent completed run and a fresh PR URL
@@ -2185,6 +2297,7 @@ def _run_reclaim_phase(
     result.reclaimed = _kb.release_stale_claims(conn, failure_limit=failure_limit)
     if reconcile_orphans:
         result.reconciled_orphans = reconcile_orphaned_running(conn)
+        result.released_parked_claims = reconcile_parked_claim_residue(conn)
     result.stale = detect_stale_running(conn, stale_timeout_seconds=stale_timeout_seconds)
     result.crashed = detect_crashed_workers(conn, board=board)
     # Side-channel attributes (see detect_crashed_workers); rate-limited tasks
