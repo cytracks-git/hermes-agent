@@ -5,6 +5,8 @@ import sqlite3
 import time
 from typing import Any, Optional
 
+from hermes_cli.kanban_task_body import validate_task_body
+
 def inherit_creator_origin(
     conn: sqlite3.Connection, task_id: str, creator_task_id: Optional[str], *,
     created_at: int,
@@ -60,6 +62,7 @@ def _validate_children_graph(children: list) -> None:
         title = child.get("title")
         if not isinstance(title, str) or not title.strip():
             raise ValueError(f"child[{idx}].title is required")
+        validate_task_body(child.get("body"))
         parents_idx = child.get("parents") or []
         if not isinstance(parents_idx, list):
             raise ValueError(f"child[{idx}].parents must be a list")
