@@ -789,6 +789,95 @@ def _rule_parked_claim_residue(task, events, runs, now, cfg) -> list[Diagnostic]
     )]
 
 
+# Eventos que colocam um card EM ``triage``. ``created`` cobre quem nasceu lá
+# (``kanban_db.create_task`` com ``triage=True``); ``block_loop_detected`` é a
+# escalação do breaker de bloqueio (``kanban_db._route_block``); ``imported`` é
+# a re-hospedagem de board (``kanban_transfer._rehome``, que parqueia em triage
+# todo card cujo workspace era diretório/worktree da outra máquina). Usar o MAIS
+# RECENTE, não o ``created_at``, evita inflar a idade de um card que só voltou
+# para triage agora.
+_TRIAGE_ENTRY_EVENTS = {"created", "block_loop_detected", "imported"}
+
+
+def _rule_stranded_in_triage(task, events, runs, now, cfg) -> list[Diagnostic]:
+    """Card parado em ``triage`` além de ``cfg["triage_stranded_threshold_seconds"]``.
+
+    ``triage`` é a única lane de trabalho que NINGUÉM varre sozinho:
+
+    - ``kanban_db.recompute_ready`` só reavalia ``status IN ('todo','blocked')``,
+      então nem o fechamento do pai mexe num card de triage;
+    - ``kanban_db_dispatch.dispatch_once`` só enumera ``_lane_rows(conn,'ready')``
+      e ``_lane_rows(conn,'review')``.
+
+    A saída é humana (``promote``/``specify``) ou a varredura opcional de
+    auto-decompose. Sem sensor, o card simplesmente some do board — a mesma
+    classe de ``parked_claim_residue``.
+
+    ATENÇÃO ao limiar: aqui NÃO existe "próximo tick" para esperar, ao
+    contrário de ``ready``. Por isso o default (4h) é 8x o de ``ready``: quem
+    cria um lote de cards em triage leva um tempo de operador, não de
+    dispatcher, para especificar cada um, e alarme que dispara no meio desse
+    trabalho vira ruído. Passadas ~4h (meio turno) ninguém mais volta sozinho.
+    """
+    threshold_seconds = float(cfg.get("triage_stranded_threshold_seconds", 4 * 3600))
+    if _task_field(task, "status") != "triage":
+        return []
+
+    entered_ts = _latest_event_ts(events, _TRIAGE_ENTRY_EVENTS)
+    if entered_ts == 0:
+        # Sem evento de entrada (board antigo / histórico podado) o created_at é
+        # o melhor limite inferior disponível: superestimar a idade de um card
+        # ancião é menos grave do que perdê-lo de vista.
+        entered_ts = int(_task_field(task, "created_at", default=0) or 0)
+    if entered_ts == 0:
+        return []
+
+    age_seconds = now - entered_ts
+    if age_seconds < threshold_seconds:
+        return []
+
+    age_str = f"{age_seconds / 3600:.1f}h" if age_seconds >= 3600 else f"{int(age_seconds / 60)}m"
+    # Mesma escada de ``_rule_stranded_in_ready``: <2x limiar warning,
+    # 2x-6x error, >6x critical.
+    if age_seconds >= threshold_seconds * 6:
+        severity = "critical"
+    elif age_seconds >= threshold_seconds * 2:
+        severity = "error"
+    else:
+        severity = "warning"
+
+    task_id = _task_field(task, "id") or "<task_id>"
+    # ``promote_task`` (kanban_db.py) recusa triage sem corpo E sem assignee e
+    # manda usar ``specify``. O hint sugerido segue essa mesma regra para não
+    # recomendar um comando que vai falhar.
+    has_body = bool((_task_field(task, "body") or "").strip())
+    has_assignee = bool((_task_field(task, "assignee") or "").strip())
+    specified = has_body and has_assignee
+    promote_cmd = f"hermes kanban promote {task_id}"
+    specify_cmd = f"hermes kanban specify {task_id}"
+    actions = [
+        _cli_hint(f"Send it to the dispatcher: {promote_cmd}", promote_cmd, suggested=specified),
+        _cli_hint(f"Or fill in body/assignee first: {specify_cmd}", specify_cmd,
+                  suggested=not specified),
+    ]
+
+    return [Diagnostic(
+        kind="stranded_in_triage", severity=severity,
+        title=f"In triage for {age_str} with nothing scheduled to move it",
+        detail=f"This task has been in triage for {age_str}. No dispatcher tick will ever pick it "
+               f"up: the dispatcher only enumerates the 'ready' and 'review' lanes, and the "
+               f"readiness sweep only re-evaluates 'todo' and 'blocked' tasks — so a finished "
+               f"parent will not move it either. It leaves triage only when someone runs "
+               f"`{promote_cmd}` (needs a body and an assignee) or `{specify_cmd}` to fill those "
+               f"in, or when the optional auto-decompose sweep picks it up.",
+        actions=actions,
+        first_seen_at=int(entered_ts), last_seen_at=int(entered_ts), count=1,
+        data={"triage_since": int(entered_ts), "age_seconds": int(age_seconds),
+              "assignee": _task_field(task, "assignee"), "specified": specified,
+              "threshold_seconds": int(threshold_seconds)},
+    )]
+
+
 # Order matters: earlier rules render first on severity ties.
 _RULES: list[RuleFn] = [
     _rule_hallucinated_cards,
@@ -802,6 +891,7 @@ _RULES: list[RuleFn] = [
     _rule_block_unblock_cycling,
     _rule_stranded_in_ready,
     _rule_parked_claim_residue,
+    _rule_stranded_in_triage,
 ]
 
 
@@ -816,6 +906,11 @@ DEFAULT_CONFIG = {
     # Below 30 min the signal is dominated by tasks about to be claimed on
     # the next dispatcher tick.
     "stranded_threshold_seconds": 30 * 60,
+    # Triage NÃO tem "próximo tick": nenhum dispatcher lê essa lane (ver
+    # _rule_stranded_in_triage). O limiar é 8x o de ``ready`` porque a saída
+    # é um humano rodando promote/specify, e alarmar durante o próprio turno
+    # de especificação de um lote só produziria ruído. 4h ≈ meio turno.
+    "triage_stranded_threshold_seconds": 4 * 3600,
 }
 
 
