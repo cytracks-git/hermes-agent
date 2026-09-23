@@ -75,18 +75,24 @@ def _profile_dir(profile: str) -> Path:
 
 
 def _read_profile_route(profile: str) -> tuple[Optional[str], Optional[str]]:
-    """``(provider, model)`` declarados no ``config.yaml`` do perfil.
+    """``(provider, model)`` efetivos do perfil, sem inventar defaults.
 
-    ``(None, None)`` quando o arquivo não existe ou não declara rota — e isso
+    ``(None, None)`` quando nem arquivo nem camada gerenciada declaram rota — e isso
     vira ``unknown``, nunca reprovação.
     """
-    config = _profile_dir(profile) / "config.yaml"
-    if not config.exists():
-        return (None, None)
-    try:
-        import yaml
+    from agent.secret_scope import (
+        build_profile_secret_scope, reset_secret_scope, set_secret_scope,
+    )
+    from hermes_cli.config_effective import load_user_config_effective
 
-        data = yaml.safe_load(config.read_text(encoding="utf-8")) or {}
+    home = _profile_dir(profile)
+    try:
+        # O dispatcher lê outro perfil: expansão não pode usar o segredo do lançador.
+        token = set_secret_scope(build_profile_secret_scope(home))
+        try:
+            data = load_user_config_effective(home / "config.yaml", fail_closed=True)
+        finally:
+            reset_secret_scope(token)
     except Exception:
         return (None, None)
     model = data.get("model") if isinstance(data, dict) else None
@@ -242,21 +248,14 @@ def check_route(profile: str) -> RouteVerdict:
         return _UNKNOWN
 
 
-# Cache do agrupamento de cota: a função roda a CADA tick do dispatcher (5s por
-# padrão) e abre+parseia o ``config.yaml`` de todo perfil. O que custa é o parse,
-# não o ``stat``, então a chave do cache é a ASSINATURA DE MTIME dos arquivos
-# lidos: enquanto ninguém edita, devolve o medido; editou, a próxima chamada
-# remede. Sem TTL adivinhado — TTL cego fossilizaria a rota por N segundos
-# depois de o operador já ter corrigido, e vazaria entre HERMES_HOME distintos.
+# O loader oficial já cacheia parse por arquivo, overlay e referências de env.
+# O agrupamento usa as rotas efetivas: mtime só do YAML perderia mudanças de .env
+# e de política gerenciada sem edição do arquivo do perfil.
 _quota_cache: dict = {"key": None, "value": None}
 
 
 def _quota_cache_key() -> tuple:
-    """``(home, ((perfil, mtime_ns), ...))`` — o que invalida a medição.
-
-    Perfil sem ``config.yaml`` entra com ``-1``: criar ou remover o arquivo é
-    mudança de rota e precisa invalidar tanto quanto editá-lo.
-    """
+    """``(home, ((perfil, rota_efetiva), ...))`` — o que invalida a medição."""
     home = _hermes_home()
     itens: list = []
     perfis = ["default"]
@@ -264,11 +263,7 @@ def _quota_cache_key() -> tuple:
     if root.is_dir():
         perfis += sorted(p.name for p in root.iterdir() if p.is_dir())
     for perfil in perfis:
-        cfg = _profile_dir(perfil) / "config.yaml"
-        try:
-            itens.append((perfil, cfg.stat().st_mtime_ns))
-        except OSError:
-            itens.append((perfil, -1))
+        itens.append((perfil, _read_profile_route(perfil)))
     return (str(home), tuple(itens))
 
 
@@ -282,22 +277,17 @@ def shared_quota_groups(*, use_cache: bool = True) -> dict:
     concentram no horário de pico, assinatura de concorrência, não de volume. O
     resultado é fila com cara de paralelismo.
 
-    Só relata o que mediu nos ``config.yaml``: provider com um perfil só não
-    aparece. Nunca levanta exceção — é diagnóstico, não caminho de execução.
+    Só relata a configuração efetiva: provider com um perfil só não aparece.
 
-    ``use_cache=False`` força releitura do disco (testes e CLI de inspeção).
+    ``use_cache=False`` refaz o agrupamento; o loader oficial mantém seu cache
+    de configuração com invalidação por arquivo, overlay e referências de env.
     """
     key = _quota_cache_key()
     if use_cache and _quota_cache["value"] is not None and _quota_cache["key"] == key:
         return dict(_quota_cache["value"])
     grupos: dict = {}
     try:
-        perfis = ["default"]
-        root = _hermes_home() / "profiles"
-        if root.is_dir():
-            perfis += sorted(p.name for p in root.iterdir() if p.is_dir())
-        for perfil in perfis:
-            provider, _model = _read_profile_route(perfil)
+        for perfil, (provider, _model) in key[1]:
             if provider:
                 grupos.setdefault(provider, []).append(perfil)
     except Exception:

@@ -258,3 +258,42 @@ def test_sem_compartilhamento_nao_inventa_alarme(home):
     _profile(home, "revisor", provider="xai-oauth", model="grok-4.6")
 
     assert rp.shared_quota_groups() == {}
+
+
+def test_rota_efetiva_isola_perfis_e_expande_env(home, monkeypatch):
+    """A→B→A em multiplex: rota morta reprova, saudável passa, sem herdar env."""
+    from agent import secret_scope
+
+    monkeypatch.setattr(secret_scope, "_MULTIPLEX_ACTIVE", True)
+    monkeypatch.setenv("ROUTE_PROVIDER", "launch-profile")
+    for name, provider in (("a", "retired-provider"), ("b", "healthy-provider")):
+        _profile(home, name, provider="${ROUTE_PROVIDER}", model="m")
+        (home / "profiles" / name / ".env").write_text(
+            f"ROUTE_PROVIDER={provider}\n", encoding="utf-8")
+    (home / "retired_models.json").write_text(
+        json.dumps({"retired-provider": ["m"]}), encoding="utf-8")
+    for name, allowed in (("a", False), ("b", True), ("a", False)):
+        verdict = rp.check_route(name)
+        assert verdict.ok is allowed
+        if not allowed:
+            assert verdict.kind == "retired_model"
+    assert secret_scope.current_secret_scope() is None
+
+
+def test_overlay_e_env_invalidam_cota_sem_editar_yaml(home, monkeypatch):
+    """O cache não pode esconder alteração efetiva fora do YAML do perfil."""
+    managed = home / "managed"
+    managed.mkdir()
+    monkeypatch.setenv("HERMES_MANAGED_DIR", str(managed))
+    for name in ("a", "b"):
+        _profile(home, name, provider="${ROUTE_PROVIDER}", model="m")
+        (home / "profiles" / name / ".env").write_text(
+            "ROUTE_PROVIDER=shared\n", encoding="utf-8")
+    assert rp.shared_quota_groups() == {"shared": ["a", "b"]}
+    (home / "profiles" / "b" / ".env").write_text(
+        "ROUTE_PROVIDER=independent\n", encoding="utf-8")
+    assert rp.shared_quota_groups() == {}
+    # Camada gerenciada tem precedência, inclusive para default sem config.
+    (managed / "config.yaml").write_text(
+        "model:\n  provider: managed-provider\n", encoding="utf-8")
+    assert rp.shared_quota_groups() == {"managed-provider": ["default", "a", "b"]}
