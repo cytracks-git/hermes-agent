@@ -965,3 +965,62 @@ def test_synthesized_run_for_unassigned_card_keeps_null_profile(kanban_home: Pat
             "SELECT profile, outcome FROM task_runs WHERE task_id = ? ORDER BY id DESC LIMIT 1", (tid,),
         ).fetchone()
         assert (run["outcome"], run["profile"]) == ("blocked", None)
+
+
+def test_delivery_closed_skips_review_spawn_and_still_spawns_open_review(
+    kanban_home: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review leftover with delivery already integrated must not take a worker.
+
+    Negative: sabotaging delivery_status back to NULL makes the same card
+    spawnable again — the guard is the delivery column, not review itself.
+    """
+    import hermes_cli.config as cfgmod
+    import hermes_cli.profiles as profmod
+
+    monkeypatch.setattr(profmod, "profile_exists", lambda name: True)
+    monkeypatch.setattr(
+        cfgmod, "load_config",
+        lambda *a, **k: {"kanban": {"review_dispatch": True}},
+    )
+
+    with kbc.connect() as conn:
+        closed_id = kb.create_task(conn, title="already integrated", assignee="reviewer")
+        claimed = kb.claim_task(conn, closed_id)
+        assert claimed is not None
+        assert kb.request_review(
+            conn, closed_id, summary="PR merged",
+            expected_run_id=claimed.current_run_id,
+        )
+        with kb.write_txn(conn):
+            conn.execute(
+                "UPDATE tasks SET delivery_status='integrated' WHERE id=?",
+                (closed_id,),
+            )
+
+        open_id = kb.create_task(conn, title="needs review", assignee="reviewer")
+        claimed_open = kb.claim_task(conn, open_id)
+        assert claimed_open is not None
+        assert kb.request_review(
+            conn, open_id, summary="please review",
+            expected_run_id=claimed_open.current_run_id,
+        )
+
+        assert kbd.check_respawn_guard(conn, closed_id, lane="review") == "delivery_closed"
+        assert kbd.check_respawn_guard(conn, open_id, lane="review") is None
+
+        res = kbd.dispatch_once(conn, dry_run=True)
+        spawned_ids = [s[0] for s in res.spawned]
+        guarded = dict(res.respawn_guarded)
+        assert closed_id not in spawned_ids
+        assert open_id in spawned_ids
+        assert guarded.get(closed_id) == "delivery_closed"
+
+        with kb.write_txn(conn):
+            conn.execute(
+                "UPDATE tasks SET delivery_status=NULL WHERE id=?",
+                (closed_id,),
+            )
+        assert kbd.check_respawn_guard(conn, closed_id, lane="review") is None
+        res2 = kbd.dispatch_once(conn, dry_run=True)
+        assert closed_id in [s[0] for s in res2.spawned]
