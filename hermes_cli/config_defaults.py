@@ -1365,6 +1365,13 @@ DEFAULT_CONFIG = {
             }
         },
     },
+    # Scripts library — extra directories the read-only scripts catalogue scans, on top of
+    # <hermes home>/scripts and the checkout's own scripts/. Paths are expanded (~, ${VAR}).
+    # Entries are a bare path or {"path": ..., "label": ...}; a missing directory is reported
+    # in the UI rather than silently skipped.
+    "scripts_library": {
+        "roots": [],  # e.g. ["~/work/ops-scripts", {"path": "/srv/scripts", "label": "Shared"}]
+    },
     # Skills — external skill directories shared across tools/agents. Paths are expanded (~, ${VAR})
     # and resolved; read-only — creation goes to ~/.hermes/skills/ unless create_dir redirects it.
     "skills": {
