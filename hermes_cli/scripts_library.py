@@ -18,14 +18,24 @@ and JS. Importing a script to read its ``__doc__`` would run it.
 is a digest of its real path, and lookups resolve that id against the freshly
 scanned catalogue. A caller therefore cannot express a path at all, which is
 what makes traversal impossible rather than merely filtered.
+
+**Nothing in a root is followed through a symlink — files included.** Skipping
+only symlinked *directories* leaves the whole guard open: a single
+``scripts/innocent.py -> ~/.hermes/.env`` link passes the extension filter,
+enters the catalogue and serves the credential as "source". Both halves are
+enforced here: ``_walk_root`` accepts only regular files, and every read goes
+through :func:`open_regular`, which asks the kernel for ``O_NOFOLLOW`` so a file
+swapped for a link between the scan and the read fails instead of leaking.
 """
 
 from __future__ import annotations
 
 import ast
+import errno
 import hashlib
 import os
 import re
+import stat as stat_module
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -41,12 +51,14 @@ SCRIPT_EXTENSIONS: Dict[str, str] = {
     ".sh": "shell",
     ".bash": "shell",
     ".zsh": "shell",
+    ".fish": "shell",
     ".mjs": "javascript",
     ".cjs": "javascript",
     ".js": "javascript",
     ".ts": "typescript",
     ".ps1": "powershell",
     ".rb": "ruby",
+    ".pl": "perl",
 }
 
 # Directory names never worth walking into. Keeps a scan of a working checkout
@@ -65,11 +77,21 @@ MAX_FILE_BYTES = 4 * 1024 * 1024
 
 _SECTION_PATTERNS: Dict[str, re.Pattern] = {
     "usage": re.compile(r"^\s*(usage|example usage|examples?|how to run)\s*:?\s*$", re.I),
-    "inputs": re.compile(r"^\s*(inputs?|arguments?|options?|parameters?|env(?:ironment)?)\s*:?\s*$", re.I),
+    "inputs": re.compile(r"^\s*(inputs?|arguments?|options?|parameters?)\s*:?\s*$", re.I),
     "outputs": re.compile(r"^\s*(outputs?|returns?|writes?)\s*:?\s*$", re.I),
     "exit_codes": re.compile(r"^\s*(exit codes?|return codes?|status codes?)\s*:?\s*$", re.I),
-    "dependencies": re.compile(r"^\s*(dependenc\w+|requirements?|requires)\s*:?\s*$", re.I),
+    "dependencies": re.compile(r"^\s*(dependenc\w+|requirements?|requires|depends on)\s*:?\s*$", re.I),
+    "environment": re.compile(r"^\s*(env(?:ironment)?(?: variables?)?)\s*:?\s*$", re.I),
+    "permissions": re.compile(r"^\s*(permissions?|privileges?|access)\s*:?\s*$", re.I),
+    "limits": re.compile(r"^\s*(limits?|timeouts?|time limits?|bounds)\s*:?\s*$", re.I),
+    "tests": re.compile(r"^\s*(tests?|evidence|proof)\s*:?\s*$", re.I),
+    "notes": re.compile(r"^\s*(notes?|caveats?|warnings?)\s*:?\s*$", re.I),
 }
+
+# The section ids the UI knows how to title. Kept beside the patterns so a new
+# pattern without a heading — or a heading without a pattern — is visible in one
+# place instead of drifting between backend and front end.
+SECTION_IDS: Tuple[str, ...] = tuple(_SECTION_PATTERNS)
 
 
 @dataclass(frozen=True)
@@ -189,6 +211,35 @@ def configured_roots(config: Optional[Dict[str, Any]]) -> List[ScriptRoot]:
     return roots
 
 
+def open_regular(path: Path):
+    """Open ``path`` for reading, refusing anything that is not a regular file
+    *and* refusing to traverse a final symlink.
+
+    ``O_NOFOLLOW`` is the load-bearing flag: the scan already rejects symlinked
+    entries, but the read happens later, so a file replaced by a link in between
+    would still be followed. Asking the kernel closes that window instead of
+    re-checking in userspace and losing the race anyway. The ``S_ISREG`` check on
+    the open descriptor covers the rest (a fifo, a device, a directory).
+
+    ``O_NONBLOCK`` is not cosmetic: opening a fifo that has no writer *blocks in
+    ``open`` itself*, so without it a named pipe planted in a scanned directory
+    hangs the scan forever — the check below would never be reached. POSIX gives
+    the flag no effect on regular files, which is every file we actually serve.
+
+    Raises ``OSError`` on refusal, so every caller's existing ``except OSError``
+    turns a refusal into "cannot read", never into leaked bytes.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    try:
+        if not stat_module.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", str(path))
+    except BaseException:
+        os.close(fd)
+        raise
+    return os.fdopen(fd, "rb")
+
+
 def _interpreter_of(first_line: str) -> str:
     if not first_line.startswith("#!"):
         return ""
@@ -205,7 +256,7 @@ def _read_head(path: Path) -> str:
     """Read at most ``MAX_DOC_BYTES`` of text. Binary or undecodable content
     comes back as "" — we describe scripts, we do not dump files."""
     try:
-        with path.open("rb") as handle:
+        with open_regular(path) as handle:
             raw = handle.read(MAX_DOC_BYTES)
     except OSError:
         return ""
@@ -327,13 +378,16 @@ def _walk_root(root: ScriptRoot, budget: int) -> Tuple[List[Path], List[str], bo
             if child.name.startswith(".") or child.name in _SKIP_DIRS:
                 continue
             try:
-                # follow_symlinks=False: a symlinked directory is never walked,
-                # so a link planted inside a root cannot pull the scan out of it.
+                # follow_symlinks=False throughout: a symlinked directory is
+                # never walked, and a symlinked FILE is never catalogued. The
+                # second half matters as much as the first — `innocent.py`
+                # pointing at `~/.hermes/.env` passes the extension filter and
+                # would hand the credential to /source as this script's text.
                 if child.is_dir(follow_symlinks=False):
                     if depth < MAX_DEPTH:
                         stack.append((Path(child.path), depth + 1))
                     continue
-                if not child.is_file():
+                if not child.is_file(follow_symlinks=False):
                     continue
             except OSError:
                 continue
@@ -550,4 +604,6 @@ def run_command_for(entry: ScriptEntry) -> str:
         return f"pwsh {quoted}"
     if entry.language == "ruby":
         return f"ruby {quoted}"
+    if entry.language == "perl":
+        return f"perl {quoted}"
     return quoted

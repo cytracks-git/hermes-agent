@@ -37,8 +37,12 @@
     published: "Published",
     reviewed: "Reviewed",
   };
-  const STATUS_LABEL = { no: "No", unknown: "Not measured", yes: "Yes" };
+  // `diverged` (commit exists but the bytes on disk differ) gets its own label
+  // instead of the raw id: folding it into "Yes" would claim a version the file
+  // does not have.
+  const STATUS_LABEL = { diverged: "Edited", no: "No", unknown: "Not measured", yes: "Yes" };
   const STATUS_CLASS = {
+    diverged: "hermes-scripts-status hermes-scripts-status--diverged",
     no: "hermes-scripts-status hermes-scripts-status--no",
     unknown: "hermes-scripts-status hermes-scripts-status--unknown",
     yes: "hermes-scripts-status hermes-scripts-status--yes",
@@ -46,6 +50,8 @@
 
   const SECTIONS = [
     ["usage", "Usage"],
+    ["inputs", "Inputs"],
+    ["outputs", "Outputs"],
     ["dependencies", "Dependencies"],
     ["environment", "Environment"],
     ["permissions", "Permissions"],

@@ -209,6 +209,56 @@ def test_source_of_a_deleted_script_is_404_not_a_500(client, scripts_dir):
     assert client.get(f"/scripts/{script_id}/source").status_code == 404
 
 
+def test_a_symlink_to_a_credential_is_never_catalogued_nor_served(client, scripts_dir, tmp_path):
+    """NEGATIVE CONTROL — the reported leak, end to end over HTTP.
+
+    ``innocent.py -> .env`` has a catalogued extension, so the closed extension
+    list does not stop it. The assertion is on the SECRET appearing anywhere in
+    the responses, not merely on the entry count, so a build that leaks cannot
+    pass by keeping the name out of the list.
+    """
+    secret = tmp_path / "hermes" / ".env"
+    secret.write_text("SECRET_TOKEN=hunter2\n", encoding="utf-8")
+    (scripts_dir).mkdir(parents=True, exist_ok=True)
+    (scripts_dir / "innocent.py").symlink_to(secret)
+
+    catalog = client.get("/catalog", params={"refresh": "true"}).json()
+
+    assert catalog["scripts"] == []
+    assert "hunter2" not in client.get("/catalog").text
+
+
+def test_source_is_refused_when_the_file_became_a_symlink_after_the_scan(client, scripts_dir, tmp_path):
+    """The scan-time check alone loses the race: /source reads later.
+
+    Only O_NOFOLLOW at read time closes the window; without it this returns the
+    credential with a 200.
+    """
+    secret = tmp_path / "hermes" / ".env"
+    secret.write_text("SECRET_TOKEN=hunter2\n", encoding="utf-8")
+    path = _write(scripts_dir / "tool.py", "'''Tool.'''\n")
+    script_id = client.get("/catalog").json()["scripts"][0]["id"]
+
+    path.unlink()
+    path.symlink_to(secret)
+
+    response = client.get(f"/scripts/{script_id}/source")
+
+    assert response.status_code == 404
+    assert "hunter2" not in response.text
+
+
+def test_source_still_works_for_an_ordinary_file(client, scripts_dir):
+    """POSITIVE CONTROL for the two refusals above: a reader that refuses
+    everything would pass both negatives and break the feature."""
+    _write(scripts_dir / "ok.py", "'''Ok.'''\nprint('served')\n")
+    script_id = client.get("/catalog").json()["scripts"][0]["id"]
+
+    body = client.get(f"/scripts/{script_id}/source").json()
+
+    assert "print('served')" in body["content"]
+
+
 # --- Surface shape ----------------------------------------------------------
 
 
@@ -250,7 +300,11 @@ def test_health_distinguishes_nothing_configured_from_a_broken_scan(client, scri
     assert empty["scripts"] == 0
 
     _write(scripts_dir / "tool.py", "'''Tool.'''\n")
-    assert client.get("/health", params={}).json()["scripts"] in (0, 1)
+    # `refresh` is what makes this an assertion instead of a coin flip: reading
+    # through the TTL cache could legitimately answer 0 OR 1, and a test that
+    # accepts both measures nothing.
+    client.get("/catalog", params={"refresh": "true"})
+    assert client.get("/health").json()["scripts"] == 1
 
 
 def test_refresh_bypasses_the_cache_so_a_new_script_appears(client, scripts_dir):

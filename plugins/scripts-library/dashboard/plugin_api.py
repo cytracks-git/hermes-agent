@@ -170,7 +170,10 @@ def get_source(
     entry = _entry_or_404(script_id)
     path = Path(entry.path)
     try:
-        with path.open("rb") as handle:
+        # open_regular, not path.open: the catalogue rejected symlinks at scan
+        # time, but the read happens later, so only O_NOFOLLOW closes the window
+        # in which the file became a link to a credential.
+        with sl.open_regular(path) as handle:
             raw = handle.read(max_bytes + 1)
     except OSError as exc:
         raise HTTPException(status_code=404, detail=f"cannot read script: {exc}") from exc

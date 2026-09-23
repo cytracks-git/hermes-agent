@@ -10,7 +10,11 @@
 import type { PluginRestOptions } from '@hermes/plugin-sdk'
 
 export type VcsState = 'committed' | 'modified' | 'published' | 'unknown' | 'untracked'
-export type StageStatus = 'no' | 'unknown' | 'yes'
+/** Mirrors the backend's lifecycle verdicts exactly. ``diverged`` is the case the
+ *  card names — a committed file edited locally, so the commit no longer
+ *  describes the bytes on disk. It must have its own badge: folding it into
+ *  ``yes`` would claim a version the file does not have. */
+export type StageStatus = 'diverged' | 'no' | 'unknown' | 'yes'
 
 export interface ScriptSummary {
   category: string
@@ -66,8 +70,10 @@ export interface LifecycleStage {
 }
 
 export interface ScriptDetail extends ScriptSummary {
-  doc: string
-  lifecycle: { measured_at: number; stages: LifecycleStage[] }
+  /** Matches the backend field name exactly (`documentation`, not `doc`): a
+   *  type that renames a wire field is a lie the compiler cannot catch. */
+  documentation: string
+  lifecycle: { stages: LifecycleStage[] }
   sections: Record<string, string>
   vcs: {
     available: boolean

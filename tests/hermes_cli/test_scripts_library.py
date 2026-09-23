@@ -9,6 +9,7 @@ inside a root, a file with no docstring, a repo with no remote).
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -16,6 +17,7 @@ import pytest
 
 from hermes_cli import scripts_library as sl
 from hermes_cli import scripts_library_vcs as vcs
+from hermes_cli.scripts_library import SCRIPT_EXTENSIONS
 
 
 def _write(path: Path, content: str, *, mode: int = 0o644) -> Path:
@@ -79,6 +81,92 @@ def test_symlinked_directory_inside_a_root_is_not_followed(home: Path, tmp_path:
     names = {entry.name for entry in sl.scan(hermes_home=home).entries}
 
     assert "stolen.py" not in names
+
+
+def test_symlinked_file_inside_a_root_never_reaches_the_catalogue(home: Path):
+    """NEGATIVE CONTROL — credential read (the reported leak).
+
+    Skipping only symlinked *directories* leaves the guard wide open: the link
+    below has a catalogued extension, so it passes the closed extension list and
+    the scan reads the credential it points at. The assertion is on the SECRET,
+    not just the name, so shortening the check to "the entry is absent" cannot
+    make a leaking build pass.
+    """
+    secret = home / ".env"
+    secret.write_text("SECRET_TOKEN=hunter2\n", encoding="utf-8")
+    os.symlink(secret, home / "scripts" / "innocent.py")
+
+    result = sl.scan(hermes_home=home)
+
+    assert [entry.name for entry in result.entries] == []
+    assert "hunter2" not in "".join(entry.purpose for entry in result.entries)
+
+
+def test_a_file_swapped_for_a_symlink_after_the_scan_is_refused_at_read_time(home: Path):
+    """The scan-time check alone loses the race: the read happens later.
+
+    ``open_regular`` asks the kernel (O_NOFOLLOW) instead of re-checking in
+    userspace, so the window between accepting an entry and reading it cannot be
+    used to substitute a link to a credential.
+    """
+    secret = home / ".env"
+    secret.write_text("SECRET_TOKEN=hunter2\n", encoding="utf-8")
+    path = _write(home / "scripts" / "tool.py", "'''Tool.'''\n")
+    entry = sl.scan(hermes_home=home).entries[0]
+
+    # The swap the guard exists for.
+    path.unlink()
+    os.symlink(secret, path)
+
+    with pytest.raises(OSError):
+        sl.open_regular(Path(entry.path))
+    # And the doc reader, which swallows OSError, must report nothing rather
+    # than the credential.
+    assert sl.extract_doc(Path(entry.path), "python") == ("", "")
+
+
+def test_open_regular_accepts_an_ordinary_file(home: Path):
+    """POSITIVE CONTROL for the guard above: a refusal-always reader would pass
+    every negative test while making the feature useless."""
+    path = _write(home / "scripts" / "plain.py", "'''Plain.'''\n")
+
+    with sl.open_regular(path) as handle:
+        assert handle.read().startswith(b"'''Plain.")
+
+
+def test_open_regular_refuses_a_directory_and_a_fifo(home: Path):
+    """NEGATIVE CONTROL for the S_ISREG half: O_NOFOLLOW alone does not stop a
+    fifo, which would otherwise hang the reader.
+
+    This case caught a real defect: without ``O_NONBLOCK`` the ``open`` itself
+    blocks waiting for a writer, so a fifo planted in a scanned directory hangs
+    the whole scan and the S_ISREG check is never reached. Measured — the test
+    run had to be killed.
+    """
+    with pytest.raises(OSError):
+        sl.open_regular(home / "scripts")
+
+    fifo = home / "scripts" / "pipe.py"
+    os.mkfifo(fifo)
+    with pytest.raises(OSError):
+        sl.open_regular(fifo)
+
+
+def test_a_fifo_in_a_root_does_not_hang_the_scan(home: Path):
+    """The scan must terminate on a tree containing a named pipe.
+
+    A hang is not a failure the suite reports — it is a suite that never
+    finishes, which reads as infrastructure trouble rather than a bug.
+    """
+    _write(home / "scripts" / "real.py", "'''Real.'''\n")
+    os.mkfifo(home / "scripts" / "blocking.py")
+
+    result = sl.scan(hermes_home=home)
+
+    assert "real.py" in {entry.name for entry in result.entries}
+    # The fifo may be listed (it is a directory entry with a known extension),
+    # but it must carry no documentation and must never have blocked the walk.
+    assert all(entry.purpose == "" for entry in result.entries if entry.name == "blocking.py")
 
 
 def test_binary_file_with_a_script_extension_yields_no_documentation(home: Path):
@@ -367,3 +455,61 @@ def test_github_url_is_built_only_for_a_github_remote(tmp_path: Path):
     assert vcs.github_blob_url("/srv/git/local.git", sha, "scripts/x.py") == ""
     # A relative path that escapes the repo never becomes a link.
     assert vcs.github_blob_url("git@github.com:owner/repo.git", sha, "../../etc/passwd") == ""
+
+
+# --- Documentation tells the truth about the code ---------------------------
+#
+# The user-facing page previously claimed extensions, sections and a file bound
+# the parser did not implement. A stale doc is a lie with a nicer font, so the
+# claims are pinned to the values the code actually holds.
+
+DOC_PAGE = Path(__file__).resolve().parents[2] / "website" / "docs" / "user-guide" / "features" / "scripts-library.md"
+
+
+def test_documented_extensions_are_exactly_the_catalogued_ones():
+    text = DOC_PAGE.read_text(encoding="utf-8")
+    # Only the sentence that enumerates them, so an example elsewhere on the
+    # page cannot make this pass or fail by accident.
+    sentence = text.split("Files are catalogued by extension (", 1)[1].split(")", 1)[0]
+    documented = set(re.findall(r"`(\.\w+)`", sentence))
+
+    assert documented == set(SCRIPT_EXTENSIONS), (
+        f"doc claims {sorted(documented - set(SCRIPT_EXTENSIONS))} the code does not catalogue; "
+        f"code catalogues {sorted(set(SCRIPT_EXTENSIONS) - documented)} the doc does not mention"
+    )
+
+
+def test_documented_file_bound_is_the_one_the_scan_enforces():
+    text = DOC_PAGE.read_text(encoding="utf-8")
+    claimed = re.search(r"Bounded at ([\d,]+) files", text)
+
+    assert claimed, "the Limits section no longer states a file bound"
+    assert int(claimed.group(1).replace(",", "")) == sl.MAX_ENTRIES
+
+
+def test_every_parsed_section_has_a_heading_in_the_desktop_ui():
+    """The backend must not extract a section the UI silently drops.
+
+    ``inputs``/``outputs`` were parsed and never rendered: work done, nothing
+    shown. Comparing the two lists is what keeps that from returning.
+    """
+    i18n = (
+        Path(__file__).resolve().parents[2]
+        / "apps" / "desktop" / "src" / "plugins" / "scripts-library" / "i18n.ts"
+    ).read_text(encoding="utf-8")
+    mapping = i18n.split("export const SECTION_API_KEY", 1)[1].split("}", 1)[0]
+    rendered = set(re.findall(r":\s*'([a-z_]+)'", mapping))
+
+    assert rendered == set(sl.SECTION_IDS), (
+        f"UI renders {sorted(rendered - set(sl.SECTION_IDS))} the parser never emits; "
+        f"parser emits {sorted(set(sl.SECTION_IDS) - rendered)} the UI never shows"
+    )
+
+
+def test_the_parity_sensors_above_can_actually_fail():
+    """POSITIVE CONTROL for the two sensors: a comparison that always passes is
+    the exact failure mode they exist to prevent, so prove it discriminates."""
+    assert set(SCRIPT_EXTENSIONS) != {".py", ".invented"}
+    assert set(sl.SECTION_IDS) != {"usage"}
+    # And the doc page really is the file being read, not an empty string.
+    assert "Scripts library" in DOC_PAGE.read_text(encoding="utf-8")

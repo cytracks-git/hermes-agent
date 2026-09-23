@@ -46,7 +46,16 @@ type ScriptsMessages = {
 
   // Documentation sections
   sections: Record<
-    'dependencies' | 'environment' | 'exitCodes' | 'limits' | 'notes' | 'permissions' | 'tests' | 'usage',
+    | 'dependencies'
+    | 'environment'
+    | 'exitCodes'
+    | 'inputs'
+    | 'limits'
+    | 'notes'
+    | 'outputs'
+    | 'permissions'
+    | 'tests'
+    | 'usage',
     string
   >
   sectionMissing: (name: string) => string
@@ -54,7 +63,7 @@ type ScriptsMessages = {
   // Lifecycle
   lifecycle: string
   stage: Record<'committed' | 'prepared' | 'published' | 'reviewed', { label: string; help: string }>
-  status: Record<'no' | 'unknown' | 'yes', string>
+  status: Record<'diverged' | 'no' | 'unknown' | 'yes', string>
   notMeasured: string
   version: string
   noVersion: string
@@ -105,8 +114,10 @@ const en: ScriptsMessages = {
     dependencies: 'Dependencies',
     environment: 'Environment',
     exitCodes: 'Exit codes',
+    inputs: 'Inputs',
     limits: 'Limits',
     notes: 'Notes',
+    outputs: 'Outputs',
     permissions: 'Permissions',
     tests: 'Tests',
     usage: 'Usage'
@@ -120,7 +131,7 @@ const en: ScriptsMessages = {
     published: { help: 'The commit is reachable from the tracked remote branch.', label: 'Published' },
     reviewed: { help: 'A pull-request merge carries this commit to the remote.', label: 'Reviewed' }
   },
-  status: { no: 'No', unknown: 'Not measured', yes: 'Yes' },
+  status: { diverged: 'Edited', no: 'No', unknown: 'Not measured', yes: 'Yes' },
   notMeasured: 'Not measured',
   version: 'Version',
   noVersion: 'No commit yet — this script exists only on this machine.',
@@ -173,6 +184,8 @@ export function useScriptsText(): ScriptsText {
  *  are not invented into headings — they simply do not render. */
 export const SECTION_ORDER = [
   'usage',
+  'inputs',
+  'outputs',
   'dependencies',
   'environment',
   'permissions',
@@ -187,8 +200,10 @@ export const SECTION_API_KEY: Record<(typeof SECTION_ORDER)[number], string> = {
   dependencies: 'dependencies',
   environment: 'environment',
   exitCodes: 'exit_codes',
+  inputs: 'inputs',
   limits: 'limits',
   notes: 'notes',
+  outputs: 'outputs',
   permissions: 'permissions',
   tests: 'tests',
   usage: 'usage'

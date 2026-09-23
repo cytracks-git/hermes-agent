@@ -56,10 +56,13 @@ library says "Configured location not found: …" instead of quietly showing a
 shorter list. "Nothing here" and "that directory is gone" are different problems.
 
 Files are catalogued by extension (`.sh`, `.bash`, `.zsh`, `.fish`, `.py`, `.rb`,
-`.pl`, `.js`, `.mjs`, `.ts`, `.ps1`). Dotfiles, `node_modules`, `.git`,
-`__pycache__`, `venv` and friends are skipped, and a symlinked directory inside a
-root is never followed — a link planted in a scanned directory cannot pull the
-scan into an unrelated tree.
+`.pl`, `.js`, `.mjs`, `.cjs`, `.ts`, `.ps1`). Dotfiles, `node_modules`, `.git`,
+`__pycache__`, `venv` and friends are skipped, and **no symlink inside a root is
+followed — files included**. A link is neither walked nor catalogued nor served:
+`scripts/innocent.py -> ~/.hermes/.env` would otherwise pass the extension filter
+and hand the credential over as that script's source. Reads also open with
+`O_NOFOLLOW`, so a file swapped for a link after the scan fails instead of
+leaking.
 
 ## Where the documentation comes from
 
@@ -88,10 +91,11 @@ Exit codes:
 """
 ```
 
-`Usage`, `Dependencies`, `Environment`, `Permissions`, `Exit codes`, `Limits`,
-`Tests` and `Notes` are recognised, in several spellings (`Requires:` and
-`Depends on:` both mean dependencies). A section that is not there is not shown —
-the library never fills in a plausible-looking blank.
+`Usage`, `Inputs`, `Outputs`, `Dependencies`, `Environment`, `Permissions`,
+`Exit codes`, `Limits`, `Tests` and `Notes` are recognised, in several spellings
+(`Requires:` and `Depends on:` both mean dependencies; `Arguments:` and
+`Parameters:` both mean inputs). A section that is not there is not shown — the
+library never fills in a plausible-looking blank.
 
 A script with no documentation reads as **"This script has no documentation
 yet."** That is the honest answer, and it is also the nudge.
@@ -111,8 +115,8 @@ trusting it:
 Three consequences worth knowing:
 
 - **A modified file is not described by its commit.** Edit a committed script and
-  the state drops to "modified" — the commit on GitHub no longer describes the
-  bytes on your disk.
+  Committed reports **Edited**, not Yes — the commit on GitHub no longer
+  describes the bytes on your disk.
 - **Publication is not review.** A commit pushed straight to a branch reports
   published, and reviewed stays *Not measured* with the reason spelled out.
 - **Not measured is a real answer.** No remote, no git, a repo the scan cannot
@@ -139,7 +143,7 @@ filtered here, it is unrepresentable.
 
 ## Limits
 
-- Bounded at 4,000 files and 6 directory levels per root; a larger tree reports
+- Bounded at 2,000 files and 6 directory levels per root; a larger tree reports
   `truncated` rather than scanning forever.
 - Documentation is read from the first 64 KB of a file.
 - Git facts come from the repository the file lives in. A file outside any

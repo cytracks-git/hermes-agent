@@ -58,7 +58,14 @@ const STATE_TONE: Record<VcsState, PanelPillTone> = {
   untracked: 'warn'
 }
 
-const STAGE_TONE: Record<StageStatus, PanelPillTone> = { no: 'bad', unknown: 'muted', yes: 'good' }
+const STAGE_TONE: Record<StageStatus, PanelPillTone> = {
+  // `diverged` is warn, never good: the commit exists but does not describe the
+  // bytes on disk, which is exactly the claim the card forbids.
+  diverged: 'warn',
+  no: 'bad',
+  unknown: 'muted',
+  yes: 'good'
+}
 
 const LANGUAGE_ICON: Record<string, string> = {
   javascript: 'symbol-method',

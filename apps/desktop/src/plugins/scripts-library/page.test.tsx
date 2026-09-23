@@ -38,9 +38,8 @@ const SUMMARY: ScriptsApi.ScriptSummary = {
 
 const DETAIL: ScriptsApi.ScriptDetail = {
   ...SUMMARY,
-  doc: 'Rotate gateway logs.',
+  documentation: 'Rotate gateway logs.',
   lifecycle: {
-    measured_at: 1_790_000_100,
     stages: [
       { evidence: 'file is readable on disk', stage: 'prepared', status: 'yes' },
       { evidence: 'tracked and clean at 1a2b3c4', stage: 'committed', status: 'yes' },
@@ -159,11 +158,36 @@ describe('scripts library page', () => {
   it('says a script has no documentation instead of inventing a purpose', async () => {
     // NEGATIVE CONTROL: documentação ausente não pode virar texto plausível.
     fetchCatalog.mockResolvedValueOnce({ ...CATALOG, scripts: [{ ...SUMMARY, purpose: '' }] })
-    fetchDetail.mockResolvedValueOnce({ ...DETAIL, doc: '', purpose: '', sections: {} })
+    fetchDetail.mockResolvedValueOnce({ ...DETAIL, documentation: '', purpose: '', sections: {} })
     mount()
     ;(await screen.findByText('rotate-logs.sh')).click()
 
     expect(await screen.findByText('This script has no documentation yet.')).toBeTruthy()
+  })
+
+  it('shows an edited script as Edited, never as a committed version', async () => {
+    // NEGATIVE CONTROL — aceite 4: "arquivo no GitHub nao prova versao local".
+    // O backend emite `diverged`; se a UI nao tiver selo para ele, o operador ve
+    // o id cru ou nada, e o caso que o card nomeia fica sem resposta na tela.
+    fetchDetail.mockResolvedValueOnce({
+      ...DETAIL,
+      lifecycle: {
+        stages: [
+          { evidence: 'file is readable on disk', stage: 'prepared', status: 'yes' },
+          { evidence: 'working copy differs from the last commit', stage: 'committed', status: 'diverged' },
+          { evidence: 'no merge evidence found', stage: 'reviewed', status: 'unknown' },
+          { evidence: 'commit is not reachable from origin/main', stage: 'published', status: 'no' }
+        ]
+      },
+      vcs_state: 'modified'
+    })
+    mount()
+    ;(await screen.findByText('rotate-logs.sh')).click()
+
+    expect(await screen.findByText('Edited')).toBeTruthy()
+    expect(screen.getByText('working copy differs from the last commit')).toBeTruthy()
+    // E o veredito NAO pode virar "Yes" na linha de Committed.
+    expect(screen.queryByText('diverged')).toBeNull()
   })
 
   it('names a missing configured location rather than showing a bare empty list', async () => {
