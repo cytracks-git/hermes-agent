@@ -104,6 +104,13 @@ _RESPAWN_GUARD_PR_URL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A deliberate "run this again" written by an operator or by the lifecycle:
+# a direct status write (dashboard drag), the auto-promotion that fires when the
+# last parent finishes, ``hermes kanban promote`` (``promoted_manual``), and an
+# unblock. ``reclaimed`` is in the ``recent_success`` set only — a crash reclaim
+# is recovery, never an instruction to re-run against an open PR.
+_REQUEUE_EVENT_KINDS = ("status", "promoted", "promoted_manual", "unblocked")
+
 
 @dataclass
 class DispatchResult:
@@ -1722,14 +1729,7 @@ def check_respawn_guard(
     ).fetchone()
     if recent_completed:
         completed_at = int(recent_completed["ended_at"] or 0)
-        requeued_after = conn.execute(
-            "SELECT 1 FROM task_events "
-            "WHERE task_id = ? AND created_at >= ? "
-            "AND kind IN ('status', 'promoted', 'unblocked', 'reclaimed') "
-            "LIMIT 1",
-            (task_id, completed_at),
-        ).fetchone()
-        if not requeued_after:
+        if not _requeued_since(conn, task_id, completed_at, extra=("reclaimed",)):
             return "recent_success"
 
     # 4. GitHub PR URL in a recent comment — prior worker already opened a PR.
@@ -1738,6 +1738,15 @@ def check_respawn_guard(
     #    now work on THAT PR — a closer or the implementer finishing it, not a
     #    duplicate implementation (#111910). A crash/reclaim is not a handoff,
     #    so the worker that opened the PR is still not re-spawned against it.
+    #
+    #    A deliberate RE-QUEUE after the PR comment (promote, unblock, a direct
+    #    status write) is the same instruction as in ``recent_success``: the card
+    #    was parked and an operator/the lifecycle sent it back to ``ready``
+    #    KNOWING the PR exists. Without this, ``active_pr`` outranks the operator
+    #    and the card is guarded every tick until the 24h window elapses, with no
+    #    ``ready`` lane progress and nothing on the card saying why. Measured on
+    #    the atlas board: 4 cards, 5h16 with zero spawns, 9.785 respawn_guarded
+    #    events — one of them guarded by a PR that was already CLOSED.
     pr_cutoff = now - _RESPAWN_GUARD_PR_WINDOW
     for c in conn.execute(
         "SELECT body, created_at FROM task_comments "
@@ -1747,18 +1756,46 @@ def check_respawn_guard(
         body = _kb._lossy_text(c["body"])
         if not (body and _RESPAWN_GUARD_PR_URL_RE.search(body)):
             continue
+        commented_at = int(c["created_at"] or 0)
         events = conn.execute(
             # Strictly after: a same-second tie stays guarded (fail closed).
             "SELECT kind, payload FROM task_events "
             "WHERE task_id = ? AND created_at > ? "
             "AND kind IN ('assigned', 'changes_requested', 'review_reopened')",
-            (task_id, int(c["created_at"] or 0)),
+            (task_id, commented_at),
         ).fetchall()
         if any(_is_handoff_event(e["kind"], e["payload"]) for e in events):
+            return None
+        if _requeued_since(conn, task_id, commented_at, strict=True):
             return None
         return "active_pr"
 
     return None
+
+
+def _requeued_since(
+    conn: sqlite3.Connection,
+    task_id: str,
+    since: int,
+    *,
+    extra: tuple[str, ...] = (),
+    strict: bool = False,
+) -> bool:
+    """True when a deliberate "run it again" event was recorded since ``since``.
+
+    ``strict`` compares with ``>`` so a same-second tie fails closed (used by the
+    ``active_pr`` branch, matching its handoff query); the ``recent_success``
+    branch keeps its historical ``>=``.
+    """
+    kinds = _REQUEUE_EVENT_KINDS + extra
+    placeholders = ", ".join("?" for _ in kinds)
+    op = ">" if strict else ">="
+    row = conn.execute(
+        f"SELECT 1 FROM task_events WHERE task_id = ? AND created_at {op} ? "
+        f"AND kind IN ({placeholders}) LIMIT 1",
+        (task_id, since, *kinds),
+    ).fetchone()
+    return row is not None
 
 
 def _is_handoff_event(kind: str, payload: Optional[str]) -> bool:

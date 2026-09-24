@@ -605,6 +605,47 @@ def test_active_pr_guard_lifts_for_implementer_after_changes_requested(
         assert kbd.check_respawn_guard(conn, done_id) == "recent_success"
 
 
+def test_active_pr_guard_lifts_when_the_card_is_requeued_after_the_pr(
+    kanban_home: Path,
+) -> None:
+    """A deliberate re-queue AFTER the PR comment outranks ``active_pr``.
+
+    ``promote``/``unblock``/a direct status write mean "run this again" from an
+    operator or the lifecycle, which already knows the PR exists — the same
+    instruction ``recent_success`` honours. Measured on the atlas board: 4 ready
+    cards, 5h16 with ZERO spawns and 9.785 ``respawn_guarded`` events, one of
+    them held by a PR that was already CLOSED. Control: a card with the same PR
+    comment and NO re-queue event stays guarded.
+    """
+    pr_comment = "Opened https://github.com/example/repo/pull/44 for review."
+    with kbc.connect() as conn:
+        # Control: PR comment, no re-queue -> still guarded.
+        guarded_id = kb.create_task(conn, title="no requeue", assignee="dev")
+        kb.add_comment(conn, guarded_id, author="dev", body=pr_comment)
+        assert kbd.check_respawn_guard(conn, guarded_id) == "active_pr"
+
+        # unblock after the PR comment lifts the guard.
+        unblocked_id = kb.create_task(conn, title="unblocked", assignee="dev")
+        kb.add_comment(conn, unblocked_id, author="dev", body=pr_comment)
+        _backdate_comments(conn, unblocked_id)
+        kb.claim_task(conn, unblocked_id)
+        assert kb.block_task(conn, unblocked_id, reason="waiting on H1") is True
+        assert kb.unblock_task(conn, unblocked_id) is True
+        assert kbd.check_respawn_guard(conn, unblocked_id) is None
+
+        # promote (todo -> ready) after the PR comment lifts it too.
+        promoted_id = kb.create_task(conn, title="promoted", assignee="dev")
+        kb.add_comment(conn, promoted_id, author="dev", body=pr_comment)
+        _backdate_comments(conn, promoted_id)
+        with kb.write_txn(conn):
+            conn.execute(
+                "UPDATE tasks SET status = 'todo' WHERE id = ?", (promoted_id,)
+            )
+        ok, why = kb.promote_task(conn, promoted_id, actor="h1")
+        assert (ok, why) == (True, None)
+        assert kbd.check_respawn_guard(conn, promoted_id) is None
+
+
 def test_dispatch_json_exposes_suppression_reasons(
     kanban_home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
