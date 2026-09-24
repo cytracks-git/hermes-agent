@@ -1,0 +1,15 @@
+WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+INTERNALERROR>   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+INTERNALERROR>   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+INTERNALERROR>   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+INTERNALERROR>   File "/tmp/deps/_pytest/assertion/rewrite.py", line 188, in exec_module
+INTERNALERROR>     exec(co, module.__dict__)
+INTERNALERROR>   File "/w/tests/hermes_cli/test_cron_profile_enumeration_lightweight.py", line 8, in <module>
+INTERNALERROR>     from hermes_cli import web_servermainloop: caught unexpected SystemExit!
+
+INTERNALERROR>   File "/w/hermes_cli/web_server.py", line 53, in <module>
+INTERNALERROR>     raise SystemExit(
+INTERNALERROR> SystemExit: Web UI requires fastapi and uvicorn.
+INTERNALERROR> Install with: /usr/local/bin/python -m pip install 'fastapi' 'uvicorn'
+
+1 warning, 79 errors in 19.77s

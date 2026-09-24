@@ -1,0 +1,17 @@
+kanban.db (prova-depois.db): linked SQLite 3.46.1 (interpreter /usr/local/bin/python) is vulnerable to the WAL-reset corruption bug (https://sqlite.org/wal.html#walresetbug) — using journal_mode=DELETE instead of enabling WAL. Upgrade to SQLite 3.51.3+ (or backports 3.50.7 / 3.44.6); Hermes-managed installs can repair the embedded runtime with `hermes update`. See `hermes doctor`. This warning fires once per process per database.
+=== DEPOIS — fronteira de admissao presente? True ===
+
+[NEGATIVO] tentando gravar corpo truncado (394 chars, head 171 + marcador)
+  ESCRITA RECUSADA -> ValueError: body ends in a context-compression truncation marker ('⟪HERMES-CONTEXT-COMPRESSION:'); not...
+  linhas em tasks apos a recusa: 0
+  RESULTADO: NADA PERSISTIDO (o texto original segue vivo na origem)
+
+[POSITIVO] gravando corpo longo integro (5967 chars)
+  banco tem 5967 chars | integro (byte a byte)? True
+  RESULTADO: PASSA INTEIRO
+
+[POSITIVO-COMENTARIO] gravando comentario longo (5967 chars)
+  banco tem 5966 chars | integro? True
+
+[NEGATIVO-COMENTARIO] tentando gravar comentario truncado
+  ESCRITA RECUSADA -> ValueError; task_comments continua com 1 linha(s)

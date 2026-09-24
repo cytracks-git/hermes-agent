@@ -677,6 +677,7 @@ def _open_parent_refusal(conn, task_id: str, s: str) -> Optional[str]:
 def _patch_title_body(conn, task_id: str, payload: UpdateTaskBody, board: Optional[str]) -> None:
     """PATCH title/body phase: one UPDATE + ``edited`` event, then the post-commit observer
     (field names only — values never leave the DB via this payload)."""
+    kanban_db.validate_task_body(payload.body)
     with kanban_db.write_txn(conn):
         sets, vals = [], []
         if payload.title is not None:

@@ -192,8 +192,13 @@ async def test_cancelled_start_hard_kills_sigterm_ignoring_descendant(tmp_path: 
         if not start.done():
             start.cancel()
             await asyncio.gather(start, return_exceptions=True)
+        # Um zumbi já morreu; sinalizá-lo após o reparenting viola o guarda.
         if child is not None and child.is_running():
-            child.kill()
+            try:
+                if child.status() != psutil.STATUS_ZOMBIE:
+                    child.kill()
+            except psutil.NoSuchProcess:
+                pass
 
 
 @pytest.mark.asyncio
