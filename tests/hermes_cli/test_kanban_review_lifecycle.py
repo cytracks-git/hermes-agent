@@ -605,6 +605,87 @@ def test_active_pr_guard_lifts_for_implementer_after_changes_requested(
         assert kbd.check_respawn_guard(conn, done_id) == "recent_success"
 
 
+@pytest.mark.parametrize("transition", ["promoted", "unblocked"])
+def test_active_pr_guard_resumes_after_real_requeue(
+    kanban_home: Path, monkeypatch: pytest.MonkeyPatch, transition: str,
+) -> None:
+    """A dependência resolvida ou o desbloqueio retoma o mesmo PR, sem trocar perfil."""
+    import hermes_cli.profiles as profmod
+
+    monkeypatch.setattr(profmod, "profile_exists", lambda name: True)
+    with kbc.connect() as conn:
+        parent = kb.create_task(conn, title="dependency", assignee="dev")
+        tid = kb.create_task(
+            conn, title="resume existing PR", assignee="dev",
+            parents=[parent] if transition == "promoted" else [],
+        )
+        kb.add_comment(conn, tid, author="dev", body="https://github.com/example/repo/pull/44")
+        _backdate_comments(conn, tid)
+        assert kbd.check_respawn_guard(conn, tid) == "active_pr"
+        if transition == "unblocked":
+            assert kb.block_task(conn, tid, reason="operator decision", kind="needs_input")
+        assert kb.complete_task(conn, parent, summary="dependency done")
+        if transition == "unblocked":
+            assert kb.unblock_task(conn, tid)
+        else:
+            kb.recompute_ready(conn)
+        assert transition in [kind for kind, _ in _events(conn, tid)]
+        task = kb.get_task(conn, tid)
+        assert task is not None
+        assert task.status == "ready"
+        assert task.assignee == "dev"
+        assert kbd.check_respawn_guard(conn, tid) is None
+        assert tid in [s[0] for s in kbd.dispatch_once(conn, dry_run=True).spawned]
+
+        # O PR novo deve ser estritamente posterior, sem depender do relógio.
+        with kb.write_txn(conn):
+            conn.execute(
+                "UPDATE task_events SET created_at = created_at - 2 WHERE task_id = ? AND kind = ?",
+                (tid, transition),
+            )
+        kb.add_comment(conn, tid, author="dev", body="https://github.com/example/repo/pull/45")
+        assert kbd.check_respawn_guard(conn, tid) == "active_pr"
+
+
+@pytest.mark.parametrize("kind,payload,delta,expected", [
+    (None, None, 1, "active_pr"),
+    ("promoted", None, -1, "active_pr"),
+    ("promoted", None, 0, "active_pr"),
+    ("promoted", None, 1, None),
+    ("unblocked", None, -1, "active_pr"),
+    ("unblocked", None, 0, "active_pr"),
+    ("unblocked", None, 1, None),
+    ("reclaimed", None, 1, "active_pr"),
+    ("status", {"status": "ready", "requested_status": "ready"}, 1, "active_pr"),
+    ("assigned", {"from": "dev", "assignee": "dev"}, 1, "active_pr"),
+    ("assigned", {"from": "dev", "assignee": None}, 1, "active_pr"),
+    ("assigned", {"assignee": "closer"}, 1, "active_pr"),
+    ("assigned", {"from": "dev", "assignee": "closer", "source": "kanban.default_assignee"}, 1, "active_pr"),
+    ("assigned", {"from": "dev", "assignee": "closer"}, 1, None),
+    ("changes_requested", None, 1, None),
+    ("review_reopened", None, 1, None),
+])
+def test_active_pr_guard_event_order_and_duplicate_controls(
+    kanban_home: Path, kind: str | None, payload: dict | None,
+    delta: int, expected: str | None,
+) -> None:
+    """A mesma entrada distingue retomada posterior de duplicação e empate temporal."""
+    with kbc.connect() as conn:
+        tid = kb.create_task(conn, title="event ordering", assignee="dev")
+        kb.add_comment(conn, tid, author="dev", body="https://github.com/example/repo/pull/44")
+        _backdate_comments(conn, tid)
+        if kind is not None:
+            created_at = conn.execute(
+                "SELECT MAX(created_at) FROM task_comments WHERE task_id = ?", (tid,),
+            ).fetchone()[0]
+            with kb.write_txn(conn):
+                conn.execute(
+                    "INSERT INTO task_events (task_id, kind, payload, created_at) VALUES (?, ?, ?, ?)",
+                    (tid, kind, json.dumps(payload), created_at + delta),
+                )
+        assert kbd.check_respawn_guard(conn, tid) == expected
+
+
 def test_dispatch_json_exposes_suppression_reasons(
     kanban_home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

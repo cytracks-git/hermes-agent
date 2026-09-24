@@ -1635,8 +1635,8 @@ def check_respawn_guard(
     ready lane only ``"recent_success"`` (completed run within the window, unless
     a re-queue event arrived after it — a deliberate re-run) and ``"active_pr"``
     (PR URL in a recent comment; re-spawning risks a duplicate PR — unless a
-    handoff event followed the comment: the named profile must work on that
-    PR). ``"delivery_closed"`` applies to both lanes: Rel already recorded
+    handoff or promoted/unblocked event followed the comment: work must resume
+    on that PR). ``"delivery_closed"`` applies to both lanes: Rel already recorded
     integrated/verified/installed, so a leftover in review/ready must not take
     a worker. The review lane still skips recent_success/active_pr: they are
     the *inputs* to a review handoff. Stale / dead claim locks are NOT a guard
@@ -1732,12 +1732,10 @@ def check_respawn_guard(
         if not requeued_after:
             return "recent_success"
 
-    # 4. GitHub PR URL in a recent comment — prior worker already opened a PR.
-    #    Exception: a handoff AFTER the newest PR comment (operator reassign,
-    #    reviewer changes_requested, review reopen) names the profile that must
-    #    now work on THAT PR — a closer or the implementer finishing it, not a
-    #    duplicate implementation (#111910). A crash/reclaim is not a handoff,
-    #    so the worker that opened the PR is still not re-spawned against it.
+    # 4. PR recente evita implementação duplicada. Handoff ou promoted/unblocked
+    #    POSTERIOR ao comentário mais novo autoriza continuar o mesmo PR, inclusive
+    #    no mesmo perfil. Reclaim e status genérico não autorizam: este último
+    #    também registra alterações sem retomada (ex.: contrato de conclusão).
     pr_cutoff = now - _RESPAWN_GUARD_PR_WINDOW
     for c in conn.execute(
         "SELECT body, created_at FROM task_comments "
@@ -1751,7 +1749,8 @@ def check_respawn_guard(
             # Strictly after: a same-second tie stays guarded (fail closed).
             "SELECT kind, payload FROM task_events "
             "WHERE task_id = ? AND created_at > ? "
-            "AND kind IN ('assigned', 'changes_requested', 'review_reopened')",
+            "AND kind IN ('assigned', 'changes_requested', 'review_reopened', "
+            "'promoted', 'unblocked')",
             (task_id, int(c["created_at"] or 0)),
         ).fetchall()
         if any(_is_handoff_event(e["kind"], e["payload"]) for e in events):
