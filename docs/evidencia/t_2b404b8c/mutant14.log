@@ -1,0 +1,227 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: detected dubious ownership in repository at '/work'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /work
+▶ launching test runner
+Discovered 2 test files (~19 tests) under ['tests/hermes_cli/test_kanban_route_preflight.py', 'tests/hermes_cli/test_process_dock.py']; running with -j 28
+[ 84.2% |    16/~19 | ✓16 | ✗ 2] ✗ tests/hermes_cli/test_kanban_route_preflight.py (16✓ 2✗, 3.3s)
+
+  ╔╍ Failed: tests/hermes_cli/test_kanban_route_preflight.py ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+  ║ 
+  ║ tests/hermes_cli/test_kanban_route_preflight.py:277: AssertionError
+  ║ ______________ test_overlay_e_env_invalidam_cota_sem_editar_yaml _______________
+  ║ 
+  ║ home = PosixPath('/var/tmp/hermes-pytest/r-3e8ncym4/pytest-of-unknown/pytest-0/test_overlay_e_env_invalidam_c0/.hermes')
+  ║ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffffaf2cbd90>
+  ║ 
+  ║     def test_overlay_e_env_invalidam_cota_sem_editar_yaml(home, monkeypatch):
+  ║         """O cache não pode esconder alteração efetiva fora do YAML do perfil."""
+  ║         managed = home / "managed"
+  ║         managed.mkdir()
+  ║         monkeypatch.setenv("HERMES_MANAGED_DIR", str(managed))
+  ║         for name in ("a", "b"):
+  ║             _profile(home, name, provider="${ROUTE_PROVIDER}", model="m")
+  ║             (home / "profiles" / name / ".env").write_text(
+  ║                 "ROUTE_PROVIDER=shared\n", encoding="utf-8")
+  ║ >       assert rp.shared_quota_groups() == {"shared": ["a", "b"]}
+  ║ E       AssertionError: assert {'${ROUTE_PRO...': ['a', 'b']} == {'shared': ['a', 'b']}
+  ║ E         
+  ║ E         Left contains 1 more item:
+  ║ E         {'${ROUTE_PROVIDER}': ['a', 'b']}
+  ║ E         Right contains 1 more item:
+  ║ E         {'shared': ['a', 'b']}
+  ║ E         Use -v to get more diff
+  ║ 
+  ║ tests/hermes_cli/test_kanban_route_preflight.py:292: AssertionError
+  ║ =========================== short test summary info ============================
+  ║ FAILED tests/hermes_cli/test_kanban_route_preflight.py::test_rota_efetiva_isola_perfis_e_expande_env
+  ║ FAILED tests/hermes_cli/test_kanban_route_preflight.py::test_overlay_e_env_invalidam_cota_sem_editar_yaml
+  ║ ========================= 2 failed, 16 passed in 2.65s =========================
+  ║
+  ║  Repro: python -m pytest tests/hermes_cli/test_kanban_route_preflight.py
+  ╚╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+[100.0% |    19/~19 | ✓20 | ✗ 3] ✗ tests/hermes_cli/test_process_dock.py (4✓ 1✗, 8.4s)
+
+  ╔╍ Failed: tests/hermes_cli/test_process_dock.py ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+  ║         (["payload\n", "bash: no job control in this shell\n"],
+  ║          "last: bash: no job control in this shell"),
+  ║     ])
+  ║     def test_dock_com_avisos_iniciais_em_chunks(monkeypatch, chunks, expected):
+  ║         """Avisos em leituras separadas não viram atividade; payload real permanece."""
+  ║         from unittest.mock import Mock
+  ║         from hermes_cli.cli_process_dock import _last_output_line, process_activity
+  ║         from tools.process_registry import ProcessRegistry, ProcessSession
+  ║     
+  ║         registry = ProcessRegistry()
+  ║         stdout = Mock(spec=["read"])
+  ║         stdout.read.side_effect = [*chunks, ""]
+  ║         proc = Mock(stdout=stdout, returncode=0)
+  ║         proc.wait.return_value = 0
+  ║         session = ProcessSession(id="proc_dock_chunks", command="sleep 30", process=proc)
+  ║         # Unidade isolada: não persistir resultado fictício nem iniciar processo real.
+  ║         monkeypatch.setattr(registry, "_finish_exited", lambda *_: None)
+  ║         registry._reader_loop(session)
+  ║         row = {"status": "running", "elapsed": 0,
+  ║                "detail": _last_output_line(session.output_buffer)}
+  ║ >       assert process_activity(row) == "0s · " + expected
+  ║ E       AssertionError: assert '0s · last: b...in this shell' == '0s · starting'
+  ║ E         
+  ║ E         - 0s · starting
+  ║ E         + 0s · last: bash: no job control in this shell
+  ║ 
+  ║ tests/hermes_cli/test_process_dock.py:31: AssertionError
+  ║ =========================== short test summary info ============================
+  ║ FAILED tests/hermes_cli/test_process_dock.py::test_dock_com_avisos_iniciais_em_chunks[chunks0-starting]
+  ║ ========================= 1 failed, 4 passed in 7.72s ==========================
+  ║
+  ║  Repro: python -m pytest tests/hermes_cli/test_process_dock.py
+  ╚╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+
+=== Summary: 2 files, 20 tests passed, 3 failed (100% complete) in 8.4s (28 workers) ===
+
+=== Per-file subprocess time distribution ===
+  Files:   2
+  Total subprocess CPU-wall: 11.7s  (runner wall: 8.4s, parallelism: 28x)
+  P50: 8.42s  P90: 8.42s  P95: 8.42s  P99: 8.42s  Max: 8.42s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+      8.42s  tests/hermes_cli/test_process_dock.py
+      3.31s  tests/hermes_cli/test_kanban_route_preflight.py
+
+=== Failure output ===
+
+--- tests/hermes_cli/test_kanban_route_preflight.py ---
+/usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.13.15, pytest-8.3.4, pluggy-1.6.0
+rootdir: /work
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, timeout-2.4.0, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 18 items
+
+tests/hermes_cli/test_kanban_route_preflight.py ................FF       [100%]
+
+=================================== FAILURES ===================================
+_________________ test_rota_efetiva_isola_perfis_e_expande_env _________________
+
+home = PosixPath('/var/tmp/hermes-pytest/r-3e8ncym4/pytest-of-unknown/pytest-0/test_rota_efetiva_isola_perfis0/.hermes')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffffaf2caa30>
+
+    def test_rota_efetiva_isola_perfis_e_expande_env(home, monkeypatch):
+        """A→B→A em multiplex: rota morta reprova, saudável passa, sem herdar env."""
+        from agent import secret_scope
+    
+        monkeypatch.setattr(secret_scope, "_MULTIPLEX_ACTIVE", True)
+        monkeypatch.setenv("ROUTE_PROVIDER", "launch-profile")
+        for name, provider in (("a", "retired-provider"), ("b", "healthy-provider")):
+            _profile(home, name, provider="${ROUTE_PROVIDER}", model="m")
+            (home / "profiles" / name / ".env").write_text(
+                f"ROUTE_PROVIDER={provider}\n", encoding="utf-8")
+        (home / "retired_models.json").write_text(
+            json.dumps({"retired-provider": ["m"]}), encoding="utf-8")
+        for name, allowed in (("a", False), ("b", True), ("a", False)):
+            verdict = rp.check_route(name)
+>           assert verdict.ok is allowed
+E           AssertionError: assert True is False
+E            +  where True = RouteVerdict(ok=True, kind='unknown', reason=None).ok
+
+tests/hermes_cli/test_kanban_route_preflight.py:277: AssertionError
+______________ test_overlay_e_env_invalidam_cota_sem_editar_yaml _______________
+
+home = PosixPath('/var/tmp/hermes-pytest/r-3e8ncym4/pytest-of-unknown/pytest-0/test_overlay_e_env_invalidam_c0/.hermes')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffffaf2cbd90>
+
+    def test_overlay_e_env_invalidam_cota_sem_editar_yaml(home, monkeypatch):
+        """O cache não pode esconder alteração efetiva fora do YAML do perfil."""
+        managed = home / "managed"
+        managed.mkdir()
+        monkeypatch.setenv("HERMES_MANAGED_DIR", str(managed))
+        for name in ("a", "b"):
+            _profile(home, name, provider="${ROUTE_PROVIDER}", model="m")
+            (home / "profiles" / name / ".env").write_text(
+                "ROUTE_PROVIDER=shared\n", encoding="utf-8")
+>       assert rp.shared_quota_groups() == {"shared": ["a", "b"]}
+E       AssertionError: assert {'${ROUTE_PRO...': ['a', 'b']} == {'shared': ['a', 'b']}
+E         
+E         Left contains 1 more item:
+E         {'${ROUTE_PROVIDER}': ['a', 'b']}
+E         Right contains 1 more item:
+E         {'shared': ['a', 'b']}
+E         Use -v to get more diff
+
+tests/hermes_cli/test_kanban_route_preflight.py:292: AssertionError
+=========================== short test summary info ============================
+FAILED tests/hermes_cli/test_kanban_route_preflight.py::test_rota_efetiva_isola_perfis_e_expande_env
+FAILED tests/hermes_cli/test_kanban_route_preflight.py::test_overlay_e_env_invalidam_cota_sem_editar_yaml
+========================= 2 failed, 16 passed in 2.65s =========================
+
+--- tests/hermes_cli/test_process_dock.py ---
+/usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.13.15, pytest-8.3.4, pluggy-1.6.0
+rootdir: /work
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, timeout-2.4.0, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 5 items
+
+tests/hermes_cli/test_process_dock.py F....                              [100%]
+
+=================================== FAILURES ===================================
+__________ test_dock_com_avisos_iniciais_em_chunks[chunks0-starting] ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffffa2effa80>
+chunks = ['bash: cannot set terminal process group (1)\n', 'bash: no job control in this shell\n']
+expected = 'starting'
+
+    @pytest.mark.parametrize("chunks, expected", [
+        (["bash: cannot set terminal process group (1)\n",
+          "bash: no job control in this shell\n"], "starting"),
+        (["payload\n"], "last: payload"),
+        (["payload\n", "bash: no job control in this shell\n"],
+         "last: bash: no job control in this shell"),
+    ])
+    def test_dock_com_avisos_iniciais_em_chunks(monkeypatch, chunks, expected):
+        """Avisos em leituras separadas não viram atividade; payload real permanece."""
+        from unittest.mock import Mock
+        from hermes_cli.cli_process_dock import _last_output_line, process_activity
+        from tools.process_registry import ProcessRegistry, ProcessSession
+    
+        registry = ProcessRegistry()
+        stdout = Mock(spec=["read"])
+        stdout.read.side_effect = [*chunks, ""]
+        proc = Mock(stdout=stdout, returncode=0)
+        proc.wait.return_value = 0
+        session = ProcessSession(id="proc_dock_chunks", command="sleep 30", process=proc)
+        # Unidade isolada: não persistir resultado fictício nem iniciar processo real.
+        monkeypatch.setattr(registry, "_finish_exited", lambda *_: None)
+        registry._reader_loop(session)
+        row = {"status": "running", "elapsed": 0,
+               "detail": _last_output_line(session.output_buffer)}
+>       assert process_activity(row) == "0s · " + expected
+E       AssertionError: assert '0s · last: b...in this shell' == '0s · starting'
+E         
+E         - 0s · starting
+E         + 0s · last: bash: no job control in this shell
+
+tests/hermes_cli/test_process_dock.py:31: AssertionError
+=========================== short test summary info ============================
+FAILED tests/hermes_cli/test_process_dock.py::test_dock_com_avisos_iniciais_em_chunks[chunks0-starting]
+========================= 1 failed, 4 passed in 7.72s ==========================
+
+=== 2 files with test failures (3 tests failed) ===
+  tests/hermes_cli/test_kanban_route_preflight.py  (2 tests failed)
+  tests/hermes_cli/test_process_dock.py  (1 test failed)

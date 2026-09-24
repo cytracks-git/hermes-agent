@@ -147,6 +147,19 @@ class DispatchResult:
     Code terminal like ``orion-cc``), not a Hermes profile. Expected steady-state
     on multi-lane setups, NOT operator-actionable; tracked apart so health
     telemetry can tell "stuck" from "correctly idle"."""
+    route_blocked: list[tuple[str, str, str]] = field(default_factory=list)
+    """``(task_id, assignee, kind)`` de cards NÃO despachados porque a rota do
+    perfil está comprovadamente morta: credencial revogada (``relogin_required``),
+    vencida sem ``refresh_token``, ou modelo declarado aposentado. Ausência de
+    credencial NÃO entra aqui — é fail-open. Operator-actionable: o card foi parado
+    ANTES de gastar um run, com a causa gravada como motivo do bloqueio."""
+    shared_quota: dict[str, list[str]] = field(default_factory=dict)
+    """``{provider: [perfis]}`` para providers com MAIS DE UM perfil apontado —
+    item 4 do card t_38817b72. N perfis numa assinatura só produzem FILA COM CARA
+    DE PARALELISMO: ``max_in_progress`` promete N workers, o teto de cota é um.
+    Medido neste tick, não configurado. Provider com um perfil só não aparece:
+    diagnóstico não inventa alarme. NÃO é operator-actionable por card — é o
+    contexto que explica por que o board parece travado sem erro."""
     skipped_per_profile_capped: list[tuple[str, str, int]] = field(default_factory=list)
     """``(task_id, assignee, current_running_count)`` deferred because the
     assignee is at ``kanban.max_in_progress_per_profile``. Picked up on a later
@@ -190,9 +203,15 @@ def describe_suppression(results: Iterable[Optional["DispatchResult"]]) -> str:
     CLI daemon and the embedded gateway dispatcher, which otherwise report a
     bare zero-spawn count while ``hermes kanban tail`` is the only place the
     guard reason is written (#111910).
+
+    ``shared_quota`` rides along (#t_38817b72): when several profiles share one
+    subscription, a stuck queue with no error at all is the EXPECTED shape —
+    the parallelism the caps promise does not exist. Naming it here is what
+    turns "dispatcher stuck, cause unknown" into an actionable line.
     """
     counts: dict[str, int] = {}
     pressure: Optional[str] = None
+    shared: dict = {}
     for res in results:
         if res is None:
             continue
@@ -200,14 +219,32 @@ def describe_suppression(results: Iterable[Optional["DispatchResult"]]) -> str:
             counts[reason] = counts.get(reason, 0) + 1
         if res.rate_limited:
             counts["rate_limited"] = counts.get("rate_limited", 0) + len(res.rate_limited)
+        if res.route_blocked:
+            counts["route_blocked"] = counts.get("route_blocked", 0) + len(res.route_blocked)
         if res.skipped_locked:
             counts["skipped_locked"] = counts.get("skipped_locked", 0) + 1
         if res.memory_pressure:
             pressure = res.memory_pressure
+        if getattr(res, "shared_quota", None):
+            shared = res.shared_quota
     parts = [f"{k}={v}" for k, v in sorted(counts.items())]
     if pressure:
         parts.append(f"memory_pressure={pressure}")
+    if shared:
+        linha = _describe_shared_quota(shared)
+        if linha:
+            parts.append(f"shared quota: {linha}")
     return ", ".join(parts)
+
+
+def _describe_shared_quota(grupos: dict) -> str:
+    """Formata o agrupamento de cota, tolerante a import quebrado."""
+    try:
+        from hermes_cli.kanban_route_preflight import describe_shared_quota
+
+        return describe_shared_quota(grupos)
+    except Exception:
+        return ""
 
 
 # Bounded registry of recently-reaped worker exits, filled by the reap loop in
@@ -1109,6 +1146,23 @@ _EXIT_SUMMARY_MARKER = "Resume this session with:"
 # Rich panel/rule chrome around the rendered response, and the CLI's own preamble lines.
 _LOG_CHROME = re.compile(r"[─━═╭╮╰╯│┃┌┐└┘]+|☤\s*Hermes")
 _LOG_NOISE_PREFIXES = ("session_id:", "Query:", "Initializing agent")
+# Ruído que o RUNTIME imprime por processo filho, depois que a causa real já foi
+# escrita. Medido no board atlas: 35 dos 219 runs mortos em 7 dias chegaram ao
+# board com um diagnóstico composto SÓ disto — a causa existia no log, mas ficava
+# antes do ruído e a janela de cauda a descartava. Filtrar por linha (não por
+# prefixo: o macOS prefixa cada linha com ``python(<pid>)``).
+_LOG_RUNTIME_NOISE = re.compile(
+    r"MallocStackLogging|malloc stack logging"
+    r"|^\s*\w+\(\d+\)\s*$"
+    r"|objc\[\d+\]:.*fork\(\)"
+    r"|^\s*warning: .*deprecated",
+    re.IGNORECASE,
+)
+# Janela de leitura do log. Generosa de propósito: o ruído acima pode ocupar
+# milhares de bytes DEPOIS da causa, então uma cauda estreita lê só ruído. O
+# recorte para o board continua sendo os últimos 400 chars de SINAL, tomados
+# após o descarte — lê-se muito, guarda-se pouco.
+_WORKER_LOG_TAIL_BYTES = 64000
 
 
 def _worker_final_output(task_id: str, board: Optional[str] = None) -> str:
@@ -1122,12 +1176,17 @@ def _worker_final_output(task_id: str, board: Optional[str] = None) -> str:
     summary, rule lines and the ``session_id:`` trailer; returns "" (never raises)
     on a missing/empty log.
 
+    Descarta também o ruído de runtime (``_LOG_RUNTIME_NOISE``) ANTES de recortar
+    os últimos 400 chars: era ele que transformava a morte em "cego" no board.
+    Quando sobra só ruído o retorno é "" — o chamador então diz apenas o que
+    mediu ("pid N not alive"), em vez de carimbar ruído como se fosse diagnóstico.
+
     ``board`` must come from the dispatching tick: ambient current-board resolution
     is wrong for every board but the one the dispatcher thread happens to call
     "current", so the log would silently not be found.
     """
     try:
-        raw = _kb.read_worker_log(task_id, tail_bytes=4000, board=board)
+        raw = _kb.read_worker_log(task_id, tail_bytes=_WORKER_LOG_TAIL_BYTES, board=board)
     except Exception:
         return ""
     if not raw:
@@ -1139,8 +1198,11 @@ def _worker_final_output(task_id: str, board: Optional[str] = None) -> str:
     lines = []
     for ln in raw.splitlines():
         ln = _LOG_CHROME.sub("", ln).strip()
-        if ln and not ln.startswith(_LOG_NOISE_PREFIXES):
-            lines.append(ln)
+        if not ln or ln.startswith(_LOG_NOISE_PREFIXES):
+            continue
+        if _LOG_RUNTIME_NOISE.search(ln):
+            continue
+        lines.append(ln)
     return " ".join(lines)[-400:]
 
 
@@ -1166,6 +1228,27 @@ class _DeadWorker:
         return "rate_limited" if self.rate_limited else "crashed"
 
 
+# Parede de cota na SAÍDA do worker. Exige sinal explícito de throttling: o
+# número "429" sozinho NÃO basta (um worker que roda ``grep -c 429 access.log``
+# imprime 429 sem ter sido throttled, e classificar isso como cota esconderia
+# uma falha real do card — falso-verde pior que o defeito original).
+_QUOTA_OUTPUT_RE = re.compile(
+    r"rate[\s_-]?limit"                       # rate limit / rate-limited / rate_limited
+    r"|too many requests"
+    r"|quota (?:exceeded|exhausted)"
+    r"|insufficient[\s_-]?quota"
+    r"|\b(?:HTTP|status|error|code)\s*[:=]?\s*429\b"
+    r"|\b429\b[^\n]{0,80}?(?:exceed|throttl|retry|quota)",
+    re.IGNORECASE,
+)
+
+# Mortes cujo código de saída NÃO é um veredito: o worker não chegou ao próprio
+# epílogo, então a saída dele é a única testemunha. ``clean_exit`` (violação de
+# protocolo) e ``terminal_provider`` ficam de fora de propósito — nesses dois o
+# worker declarou como terminou, e a declaração dele vale mais que o texto.
+_INCONCLUSIVE_EXIT_KINDS = ("unknown", "nonzero_exit", "signaled")
+
+
 def _classify_dead_worker(
     pid: int, claimer: Optional[str], *, task_id: Optional[str] = None, board: Optional[str] = None,
 ) -> _DeadWorker:
@@ -1174,13 +1257,35 @@ def _classify_dead_worker(
     A clean exit or a crash carries the worker's own last output (``worker_output``
     in the event payload, appended to the error text) so the board and the retry
     worker see WHY instead of a bare label; a rate-limited requeue does not need it.
+
+    Quando o código de saída não é um veredito (``_INCONCLUSIVE_EXIT_KINDS``) e a
+    saída do worker mostra parede de cota, a morte é REclassificada para
+    ``rate_limited``. Medido no board atlas: 30 dos 219 runs mortos em 7 dias
+    traziam 429 na própria saída e foram gravados como ``crashed`` — que conta
+    falha e gasta o breaker do card por uma parede de cota que nada tem a ver
+    com o card. Um worker morto pelo provider raramente chega ao próprio epílogo,
+    então o trailer de saída não existe e só a saída testemunha.
     """
     dead = _classify_dead_worker_exit(pid, claimer, task_id=task_id, board=board)
-    if task_id and not dead.rate_limited:
-        worker_output = _worker_final_output(task_id, board=board)
-        if worker_output:
-            dead.error_text += f" Worker's last output: {worker_output!r}"
-            dead.event_payload["worker_output"] = worker_output
+    if not task_id or dead.rate_limited:
+        return dead
+    worker_output = _worker_final_output(task_id, board=board)
+    if not worker_output:
+        return dead
+    if dead.kind in _INCONCLUSIVE_EXIT_KINDS and _QUOTA_OUTPUT_RE.search(worker_output):
+        # Requeue sem contar falha, carregando a evidência: o board precisa
+        # poder auditar POR QUE isto não contou como falha do card.
+        return _DeadWorker(
+            dead.kind, dead.code,
+            f"pid {pid} morreu numa parede de cota (reclassificado pela saída do "
+            f"worker) — requeued sem contar falha. Worker's last output: {worker_output!r}",
+            "rate_limited",
+            {**dead.event_payload, "rate_limit_source": "worker_output",
+             "worker_output": worker_output},
+            rate_limited=True,
+        )
+    dead.error_text += f" Worker's last output: {worker_output!r}"
+    dead.event_payload["worker_output"] = worker_output
     return dead
 
 
@@ -2135,6 +2240,58 @@ def _call_spawn_fn(spawn_fn, task: Task, workspace: str, board: Optional[str]) -
         return spawn_fn(task, workspace)
 
 
+def _route_preflight(assignee: str):
+    """Veredito de rota do perfil (#t_38817b72), tolerante a import quebrado.
+
+    Import local para não criar ciclo e para que um módulo ausente jamais pare
+    o tick: sem ele, o dispatch segue como antes.
+    """
+    try:
+        from hermes_cli.kanban_route_preflight import check_route
+
+        return check_route(assignee)
+    except Exception:
+        from types import SimpleNamespace
+
+        return SimpleNamespace(ok=True, kind="unknown", reason=None)
+
+
+def _shared_quota_groups() -> dict:
+    """Agrupamento de cota compartilhada (#t_38817b72), tolerante a import quebrado.
+
+    Mesmo contrato defensivo de :func:`_route_preflight`: diagnóstico não pode
+    derrubar o tick. Falhou, o dispatcher segue sem a linha de contexto.
+    """
+    try:
+        from hermes_cli.kanban_route_preflight import shared_quota_groups
+
+        return shared_quota_groups()
+    except Exception:
+        # Sem logger neste módulo (mesmo contrato de _route_preflight): o tick
+        # segue sem a linha de contexto, que é diagnóstico, não execução.
+        return {}
+
+
+def _block_task_for_dead_route(conn: sqlite3.Connection, task_id: str, route) -> None:
+    """Para o card com a causa da rota morta, sem abrir nem fechar run.
+
+    ``capability`` é o kind certo: nenhum retry do agente conserta credencial
+    revogada ou modelo aposentado — quem conserta é o operador, no config do
+    perfil. Bloquear aqui é o que impede o card de gastar run e breaker num
+    worker que morreria no startup.
+    """
+    try:
+        _kb.block_task(conn, task_id, reason=route.reason, kind="capability")
+        with _kb.write_txn(conn):
+            _kb._append_event(
+                conn, task_id, "route_preflight_blocked",
+                {"kind": route.kind, "reason": route.reason},
+            )
+    except Exception:
+        _kb._log.warning(
+            "kanban dispatcher: route preflight could not block %s", task_id, exc_info=True)
+
+
 def _dispatch_lane_task(
     conn: sqlite3.Connection,
     row: sqlite3.Row,
@@ -2162,6 +2319,22 @@ def _dispatch_lane_task(
     profile_exists = _profile_exists_fn()
     if profile_exists is not None and not profile_exists(assignee):
         result.skipped_nonspawnable.append(task_id)
+        return False
+    # Preflight de rota (#t_38817b72): credencial REVOGADA (exige novo login) ou
+    # VENCIDA sem refresh_token, e modelo declarado aposentado, matam o worker logo
+    # no startup. Medido no board atlas: 39 runs em 7 dias queimados assim. Bloquear
+    # o card com a causa é mais honesto que despachá-lo para morrer — e não gasta run
+    # nem breaker.
+    #
+    # AUSÊNCIA DE CREDENCIAL NÃO REPROVA (fail-open deliberado): a assinatura pode ser
+    # servida por fora do auth store — medido neste host, reprovar por ausência dava
+    # ok=False em 5/5 perfis, inclusive o que estava executando, e pararia o board.
+    # Só reprova com evidência positiva lida no disco; na dúvida autoriza (ver o módulo).
+    route = _route_preflight(assignee)
+    if not route.ok:
+        if not dry_run:
+            _block_task_for_dead_route(conn, task_id, route)
+        result.route_blocked.append((task_id, assignee, route.kind))
         return False
     # Per-profile cap: one profile's local model / API quota / browser pool
     # must not be overwhelmed by a fan-out even with global headroom.
@@ -2451,6 +2624,11 @@ def _dispatch_once_locked(
     the PID so later ticks catch crashes before the TTL. Cap semantics:
     :func:`_tick_spawn_budget`."""
     result = DispatchResult()
+    # Cota compartilhada (#t_38817b72 item 4): N perfis numa assinatura só. Medido
+    # a cada tick (cacheado 60s no módulo de preflight), ANTES de qualquer retorno
+    # antecipado — é justamente no tick que não despacha nada que o operador
+    # precisa saber que o paralelismo prometido não existe.
+    result.shared_quota = _shared_quota_groups()
     _run_reclaim_phase(
         conn, result, stale_timeout_seconds=stale_timeout_seconds,
         failure_limit=failure_limit, reconcile_orphans=reconcile_orphans, board=board,

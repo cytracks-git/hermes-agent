@@ -1273,7 +1273,9 @@ class ProcessRegistry(ProcessCheckpointMixin):
             nonlocal first_chunk
             if first_chunk:
                 chunk = self._clean_shell_noise(chunk)
-                first_chunk = False
+                # Avisos do shell podem chegar em leituras distintas; só o primeiro
+                # payload encerra a limpeza inicial. Não filtrar saída posterior.
+                first_chunk = not bool(chunk)
             self._ingest_output(session, chunk)
         try:
             proc = session.process
