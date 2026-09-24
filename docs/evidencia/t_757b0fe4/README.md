@@ -151,7 +151,7 @@ Receita final executada, `$ARVORE` apontando para o worktree e `$EVIDENCIA` para
 ```sh
 /usr/bin/time -p docker run --rm --network none --user "$(id -u):$(id -g)" \
   -v "$ARVORE:/src:ro" -v "$EVIDENCIA:/evidence" hermes-launch:t_e9aedb24 bash -c '
-  cp -a /src /tmp/lab; cd /tmp/lab; rm .git; git init -q
+  cp -a /src /tmp/lab; cd /tmp/lab; rm .git; git init -q  # no-tmp: ok — rootfs efêmero DENTRO do container, não caminho do host
   result=0
   for name in db review_lifecycle delivery blocked_sticky promote; do
     bash scripts/run_tests.sh tests/hermes_cli/test_kanban_${name}.py -j 1 \
