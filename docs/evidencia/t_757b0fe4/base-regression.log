@@ -1,0 +1,92 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+▶ launching test runner
+Discovered 1 test files (~50 tests) under ['tests/hermes_cli/test_kanban_db.py']; running with -j 1
+[100.0% |    50/~50 | ✓56 | ✗ 0] ✓ tests/hermes_cli/test_kanban_db.py (56✓ 1s, 18.0s)
+
+=== Summary: 1 files, 56 tests passed, 0 failed, 1 skipped (100% complete) in 18.0s (1 workers) ===
+
+  note: windows_only tests (in 1 file) were SKIPPED on this host (linux); they run on the tests-os CI lane (windows-latest).
+  Durations cached to test_durations.json (1 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 18.0s  (runner wall: 18.0s, parallelism: 1x)
+  P50: 17.98s  P90: 17.98s  P95: 17.98s  P99: 17.98s  Max: 17.98s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+     17.98s  tests/hermes_cli/test_kanban_db.py
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+▶ launching test runner
+Discovered 1 test files (~26 tests) under ['tests/hermes_cli/test_kanban_review_lifecycle.py']; running with -j 1
+[100.0% |    26/~26 | ✓28 | ✗ 0] ✓ tests/hermes_cli/test_kanban_review_lifecycle.py (28✓, 8.0s)
+
+=== Summary: 1 files, 28 tests passed, 0 failed (100% complete) in 8.0s (1 workers) ===
+  Durations cached to test_durations.json (1 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 8.0s  (runner wall: 8.0s, parallelism: 1x)
+  P50: 8.00s  P90: 8.00s  P95: 8.00s  P99: 8.00s  Max: 8.00s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+      8.00s  tests/hermes_cli/test_kanban_review_lifecycle.py
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+▶ launching test runner
+Discovered 1 test files (~4 tests) under ['tests/hermes_cli/test_kanban_delivery.py']; running with -j 1
+[100.0% |     4/~4 | ✓4 | ✗0] ✓ tests/hermes_cli/test_kanban_delivery.py (4✓, 0.8s)
+
+=== Summary: 1 files, 4 tests passed, 0 failed (100% complete) in 0.8s (1 workers) ===
+  Durations cached to test_durations.json (1 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 0.8s  (runner wall: 0.8s, parallelism: 1x)
+  P50: 0.84s  P90: 0.84s  P95: 0.84s  P99: 0.84s  Max: 0.84s
+  <1s: 1 files (100%)  <2s: 1 files (100%)
+  Top 10 slowest:
+      0.84s  tests/hermes_cli/test_kanban_delivery.py
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+▶ launching test runner
+Discovered 1 test files (~3 tests) under ['tests/hermes_cli/test_kanban_blocked_sticky.py']; running with -j 1
+[100.0% |     3/~3 | ✓3 | ✗0] ✓ tests/hermes_cli/test_kanban_blocked_sticky.py (3✓, 2.5s)
+
+=== Summary: 1 files, 3 tests passed, 0 failed (100% complete) in 2.5s (1 workers) ===
+  Durations cached to test_durations.json (1 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 2.5s  (runner wall: 2.5s, parallelism: 1x)
+  P50: 2.47s  P90: 2.47s  P95: 2.47s  P99: 2.47s  Max: 2.47s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+      2.47s  tests/hermes_cli/test_kanban_blocked_sticky.py
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+▶ launching test runner
+Discovered 1 test files (~5 tests) under ['tests/hermes_cli/test_kanban_promote.py']; running with -j 1
+[100.0% |     5/~5 | ✓5 | ✗0] ✓ tests/hermes_cli/test_kanban_promote.py (5✓, 3.4s)
+
+=== Summary: 1 files, 5 tests passed, 0 failed (100% complete) in 3.4s (1 workers) ===
+  Durations cached to test_durations.json (1 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 3.4s  (runner wall: 3.4s, parallelism: 1x)
+  P50: 3.42s  P90: 3.42s  P95: 3.42s  P99: 3.42s  Max: 3.42s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+      3.42s  tests/hermes_cli/test_kanban_promote.py
