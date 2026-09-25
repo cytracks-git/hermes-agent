@@ -1,0 +1,4 @@
+# tsc -p apps/desktop --noEmit
+rc=0 — saida vazia: nenhum erro de tipo. O arquivo de saida original tambem e
+vazio (tsc so imprime em caso de erro); este cabecalho existe para que a
+evidencia nao seja um arquivo de zero byte indistinguivel de "nao rodou".

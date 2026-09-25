@@ -1,0 +1,65 @@
+=== BASE (sem sabotagem): rc=0 falhas=0
+
+--- N12 revalidacao da preimagem/symlink some antes da escrita
+    rc=1 falhas=4 -> ACUSOU
+      tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[preimage-patch]
+      tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[preimage-write]
+      tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[symlink-patch]
+      tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[symlink-write]
+
+--- N1 pause mantem o claim: a espera humana ocupa vaga do orcamento
+    rc=1 falhas=1 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_wait.py::test_pause_releases_claim_and_slot_without_ending_the_run
+
+--- N2 resume nao restaura identidade no mesmo CAS (running + claim NULL)
+    rc=1 falhas=3 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_wait.py::test_resume_closes_the_wait_window_and_accumulates_it
+      tests/hermes_cli/test_kanban_approval_wait.py::test_resume_fails_closed_when_the_card_left_the_wait
+      tests/hermes_cli/test_kanban_approval_wait.py::test_resume_restores_identity_in_the_same_cas
+
+--- N3 pause encerra o run (habilitaria reap_terminal_workers a matar quem espera)
+    rc=1 falhas=15 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_wait.py::test_a_paused_card_is_not_claimable
+      tests/hermes_cli/test_kanban_approval_wait.py::test_every_exit_without_a_write_lands_on_blocked_needs_input[cancelled-approval_cancelled]
+      tests/hermes_cli/test_kanban_approval_wait.py::test_every_exit_without_a_write_lands_on_blocked_needs_input[denied-approval_denied]
+      tests/hermes_cli/test_kanban_approval_wait.py::test_every_exit_without_a_write_lands_on_blocked_needs_input[obsolete-approval_obsolete]
+
+--- N4 enforce_max_runtime para de descontar a espera humana (T-3)
+    rc=1 falhas=1 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_wait.py::test_human_wait_does_not_consume_max_runtime
+
+--- N5 unicidade de pendencia deixa de ser UNIQUE (U-3)
+    rc=1 falhas=1 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_wait.py::test_only_one_pending_request_per_run
+
+--- N6 varredura de orfas ignora consumed nao-aplicada (R-7)
+    rc=1 falhas=1 -> ACUSOU
+      tests/hermes_cli/test_kanban_approval_wait.py::test_orphan_predicate_covers_every_unapplied_state
+
+--- N7 E-8 camada 1: clausula de origem some do UPDATE (a unica sem TOCTOU)
+    rc=1 falhas=1 -> ACUSOU
+      tests/plugins/test_kanban_dashboard_plugin.py::test_layer_one_guard_holds_when_the_pause_races_the_drag
+
+--- N8 E-8 camada 2: _apply_status para de olhar a origem
+    rc=1 falhas=2 -> ACUSOU
+      tests/plugins/test_kanban_dashboard_plugin.py::test_bulk_cannot_drain_cards_out_of_waiting_approval
+      tests/plugins/test_kanban_dashboard_plugin.py::test_drag_out_of_waiting_approval_is_refused
+
+--- N9 entrada em waiting_approval por verbo generico volta a ser aceita
+    rc=1 falhas=1 -> ACUSOU
+      tests/plugins/test_kanban_dashboard_plugin.py::test_waiting_approval_is_not_reachable_by_a_generic_verb
+
+--- N10 um verbo generico passa a LEVAR para waiting_approval
+    rc=1 falhas=1 -> ACUSOU
+      tests/plugins/test_kanban_dashboard_plugin.py::test_waiting_approval_is_not_in_the_status_handler_table
+
+--- N11 coluna waiting_approval some do board (E-2)
+    rc=1 falhas=4 -> ACUSOU
+      tests/plugins/test_kanban_dashboard_plugin.py::test_board_empty
+      tests/plugins/test_kanban_dashboard_plugin.py::test_bulk_cannot_drain_cards_out_of_waiting_approval
+      tests/plugins/test_kanban_dashboard_plugin.py::test_drag_out_of_waiting_approval_is_refused
+      tests/plugins/test_kanban_dashboard_plugin.py::test_waiting_approval_is_a_board_column
+
+=== RESTAURADO: rc=0 falhas=0
+
+TODAS as 12 sabotagens foram acusadas, com rc real do runner canonico.

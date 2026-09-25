@@ -131,10 +131,12 @@ def _notification_event_dedup_key(evt: dict) -> tuple:
     return (evt.get("session_id", ""), evt_type, *(evt.get(f, 0 if f == "suppressed" else "") for f in extra))
 
 
-# Mirror gateway/kanban_watchers.py TERMINAL_KINDS: claim silent kinds (archived/unblocked) too so the cursor advances
-# past them and they can't wedge a later completed/blocked event behind an unclaimed row.
-_KANBAN_NOTIFY_KINDS = ("completed", "blocked", "gave_up", "crashed", "timed_out", "status", "archived", "unblocked")
-_KANBAN_POLL_SECONDS = _LOOP_POLL_SECONDS = 5.0  # /loop and /heartbeat share one idle-poll cadence
+# Kinds atendidos pelo TUI; aprovação avisa a pessoa, sem turno de modelo.
+# archived/unblocked avançam o cursor silenciosamente.
+_KANBAN_NOTIFY_KINDS = ("completed", "blocked", "gave_up", "crashed", "timed_out", "status", "archived", "unblocked", "approval_requested")
+# Preserva a cadência da main: consultar o registro a cada 0,5 s consumia
+# aproximadamente um núcleo com 11 sessões (#108005).
+_KANBAN_POLL_SECONDS = _LOOP_POLL_SECONDS = _BOT_DELIVERY_POLL_SECONDS = 5.0
 
 
 def _notif_release_turn(session: dict) -> None:
@@ -189,8 +191,8 @@ def _notif_slash_loop_tick(rid: str, sid: str, session: dict, mgr, wakeup: str) 
             if not _notif_claim_turn(session):
                 mgr.abandon_tick()
                 return
-            _emit("message.start", sid)
-            _run_prompt_submit(rid, sid, session, payload["message"])
+            # Releases the claim on failure: the swallow below would otherwise leave the session busy for good.
+            _notif_submit(rid, sid, session, payload["message"], "loop wakeup send failed")
             return
     except Exception:
         pass
@@ -316,6 +318,9 @@ def _kb_timed_out(task, payload: dict, title: str) -> str:
 
 # kind -> (glyph, suffix after "Kanban <id>"); silent kinds (archived/unblocked) are absent → None.
 _KANBAN_EVENT_FORMATTERS = {
+    "approval_requested": ("🔐", lambda t, p, title: f" needs file approval — {title}. "
+                           f"Request {p.get('request_id', '')}. Open File approvals in Kanban. "
+                           "Comments do not authorize writes."),
     "completed": ("✔", _kb_completed),
     "blocked": ("⏸", lambda t, p, title: " blocked" + (f": {str(p.get('reason'))[:160]}" if p.get("reason") else "")),
     "gave_up": ("✖", lambda t, p, title: " gave up after repeated spawn failures"
@@ -349,7 +354,8 @@ def _kb_board_key(_kb, board_meta) -> tuple[str, str]:
         return slug, f"slug:{slug}"
 
 
-def _kb_poll_board(_kb, slug: str, session_key: str) -> list:
+def _kb_poll_board(_kb, slug: str, session_key: str, approval_delivery=None,
+                   approval_generation: str = "none") -> list:
     """Claim + format this session's unseen events on one board. One poller per live session: the board is not opened
     writable unless it has a subscription owned by this exact session (a failed read-only probe — locked/corrupt DB —
     falls through so delivery is preserved)."""
@@ -381,6 +387,14 @@ def _kb_poll_board(_kb, slug: str, session_key: str) -> list:
             from gateway.warning_notifications import DiagnosticText
             for ev in events:
                 text = _format_kanban_event_text(sub, task, ev, slug)
+                if ev.kind == "approval_requested":
+                    if ev.id <= (sub.get("last_ping_event_id") or 0):
+                        continue
+                    if not _kb_deliver_approval_notice(
+                            conn, sub_ident, ev, text, approval_delivery,
+                            approval_generation, claimed_cursor=_new):
+                        break
+                    continue
                 if text:
                     texts.append(DiagnosticText(text) if diagnostic_event(ev) else text)
             # Unsubscribe only on archive: ``done`` is reversible in review/controller flows, so keeping the sub lets a
@@ -391,7 +405,62 @@ def _kb_poll_board(_kb, slug: str, session_key: str) -> list:
     return texts
 
 
-def _collect_kanban_notifications(session: dict) -> list:
+def _kb_deliver_approval_notice(conn, sub_ident, ev, text, approval_delivery,
+                                generation: str, *, claimed_cursor) -> bool:
+    """Entrega UM aviso de aprovação e registra o desfecho. ``True`` = seguir.
+
+    Duas coisas mudam em relação ao laço anterior, que tentava para sempre:
+
+    1. O orçamento por geração de transporte (``notice_budget_open``) evita que
+       uma conexão morta reenfileire o mesmo frame indefinidamente. Esgotar NÃO
+       decide, não cancela e não redespacha a escrita — o pedido continua
+       exatamente como está, só para de bater na mesma porta. Uma reconexão real
+       traz geração nova e orçamento novo por construção.
+    2. Cada tentativa vira observação durável, então o painel mostra "Delivery
+       failed (2/3)" em vez de silêncio. O rótulo é sempre de TRANSPORTE: recibo
+       não prova leitura humana.
+
+    O cursor continua rebobinado em toda falha, inclusive na que esgota o
+    orçamento: nada de recibo sem entrega.
+    """
+    from hermes_cli import kanban_approval_diagnostics as diag
+    from hermes_cli import kanban_db_notify as _kbn
+    try:
+        open_budget = diag.notice_budget_open(
+            conn, sub_ident["task_id"], _kb_notice_request_id(ev), generation)
+    except Exception:
+        open_budget = True
+    if not open_budget:
+        _kbn.rewind_notify_cursor(conn, claimed_cursor=claimed_cursor, old_cursor=ev.id - 1, **sub_ident)
+        return False
+    try:
+        delivered = bool(text and approval_delivery and approval_delivery(text))
+    except Exception as exc:
+        _notif_log_failure("kanban approval delivery failed", exc)
+        delivered = False
+    with contextlib.suppress(Exception):
+        diag.record_notice_outcome(
+            conn, task_id=sub_ident["task_id"], run_id=getattr(ev, "run_id", None),
+            request_id=_kb_notice_request_id(ev), generation=generation, delivered=delivered)
+    if not delivered:
+        # Falha de transporte não vira recibo nem acorda modelo.
+        _kbn.rewind_notify_cursor(conn, claimed_cursor=claimed_cursor, old_cursor=ev.id - 1, **sub_ident)
+        return False
+    _kbn.record_notify_ping(conn, event_id=ev.id, **sub_ident)
+    return True
+
+
+def _kb_notice_request_id(ev) -> str:
+    """``request_id`` do evento; ``evento:<id>`` quando o payload não o traz.
+
+    Sem identidade de pedido o orçamento seria global e uma request barulhenta
+    calaria as outras; o fallback mantém a contagem por evento.
+    """
+    payload = getattr(ev, "payload", None) or {}
+    return str(payload.get("request_id") or f"event:{ev.id}")
+
+
+def _collect_kanban_notifications(session: dict, approval_delivery=None) -> list:
     """Claim unseen terminal kanban events for this session's ``platform="tui"`` subscriptions (``kanban_create``
     auto-subscribes with ``chat_id=HERMES_SESSION_KEY``; no "tui" messaging adapter exists, so this poller is the
     delivery path). Same atomic cursor-claim as the gateway notifier: exactly-once even if a gateway polls the same DB.
@@ -416,7 +485,16 @@ def _collect_kanban_notifications(session: dict) -> list:
     unique = {}
     for slug, resolved in (_kb_board_key(_kb, board_meta) for board_meta in boards):
         unique.setdefault(resolved, slug)
-    return [t for slug in unique.values() for t in _kb_poll_board(_kb, slug, session_key)]
+    # A geração vem do OBJETO de transporte desta sessão: reconectar troca o
+    # objeto e ganha orçamento novo sem depender de relógio nem de contador de
+    # processo (que um restart zeraria em silêncio).
+    try:
+        from hermes_cli import kanban_approval_diagnostics as _diag
+        generation = _diag.transport_generation(session.get("transport"))
+    except Exception:
+        generation = "none"
+    return [t for slug in unique.values()
+            for t in _kb_poll_board(_kb, slug, session_key, approval_delivery, generation)]
 
 
 def _notif_poll_kanban(sid: str, session: dict) -> None:
@@ -428,7 +506,8 @@ def _notif_poll_kanban_scoped(sid: str, session: dict) -> None:
     """One kanban poll: emit new texts, buffer them, and run the buffered batch as a turn if idle. Events are
     cursor-claimed (never re-queued), so they wait in the buffer instead of dropping the agent turn."""
     try:
-        texts = _collect_kanban_notifications(session)
+        texts = _collect_kanban_notifications(session, approval_delivery=lambda text:
+            _emit("status.update", sid, {"kind": "process", "text": text}))
     except Exception as exc:
         _notif_log_failure("kanban notification poll failed", exc)
         texts = []
@@ -456,7 +535,16 @@ def _notif_poll_kanban_scoped(sid: str, session: dict) -> None:
 def _notif_dispatch_event(sid: str, session: dict, evt: dict, text: str) -> None:
     """Run the claimed (running=True) agent turn for one notification event."""
     from tools.async_delegation import claim_event_delivery, complete_event_delivery, release_event_delivery
-    if (claim := claim_event_delivery(evt, "tui-poller")) is None:
+    try:
+        claim = claim_event_delivery(evt, "tui-poller")
+    except Exception as exc:  # shared ledger busy/unreadable: the durable row stays pending and replays
+        _notif_log_failure("notification delivery claim failed", exc)
+        claim = None
+    if claim is None:
+        # Another consumer holds the durable row — a gateway sharing this home claims before it verifies
+        # the target. No turn will run, and nothing else clears ``running``: a busy session is exempt
+        # from the reaper, keeps its lease, and never reaches its bot mailbox again.
+        _notif_release_turn(session)
         return
     kwargs = ({"display_kind": "async_delegation_complete", "display_metadata": _async_delegation_display_metadata(evt)}
               if evt.get("type") == "async_delegation" else {})
@@ -539,10 +627,19 @@ def _notif_dispatch_completions(sid, session, notifications, registry, deferred)
         if deferred is None:
             time.sleep(0.25)
         return
-    claimed = [(event, text, claim) for event, text in notifications
-               if (claim := claim_event_delivery(event, "tui-completion-batch")) is not None]
-    batch = ProcessNotificationBatch(tuple((event, text) for event, text, _claim in claimed))
-    text = batch.render(registry)
+    claimed: list = []
+    try:
+        for event, event_text in notifications:
+            if (claim := claim_event_delivery(event, "tui-completion-batch")) is not None:
+                claimed.append((event, event_text, claim))
+        batch = ProcessNotificationBatch(tuple((event, event_text) for event, event_text, _claim in claimed))
+        text = batch.render(registry)
+    except Exception as exc:
+        _notif_log_failure("completion batch preparation failed", exc)
+        _notif_release_turn(session)
+        for event, _text, claim in claimed:
+            release_event_delivery(event, claim)
+        return
     if text is None:
         _notif_release_turn(session)
     try:
@@ -630,23 +727,19 @@ def _poll_bot_live_delivery_once(sid: str, session: dict) -> bool:
     return started
 
 
-# A failing mailbox poll (typically the active-session registry lock unavailable under contention) retries
-# every ``queue.get`` slice; back off between attempts and log the failure once per window, not per attempt.
-_BOT_POLL_FAILURE_BACKOFF_S = 5.0
+# A failing mailbox poll (typically the active-session registry lock unavailable under contention) is
+# retried on the next ``_BOT_DELIVERY_POLL_SECONDS`` pass; log the failure once per window, not per attempt.
 _BOT_POLL_WARN_INTERVAL_S = 60.0
 
 
 def _poll_bot_live_delivery_guarded(sid: str, session: dict, now: float) -> None:
-    """One poller-loop pass of the mailbox poll: skipped while backing off after a failure; a failure is
-    logged at WARNING once per ``_BOT_POLL_WARN_INTERVAL_S`` (with the count of suppressed repeats) and at
-    DEBUG otherwise. An unthrottled poll logged ``Bot live-owner delivery poll failed`` ~2×/minute per session
-    for days, 91% of an install's WARNING output (#111719)."""
-    if now < session.get("_bot_poll_retry_at", 0.0):
-        return
+    """One poller-loop pass of the mailbox poll. A failure is logged at WARNING once per
+    ``_BOT_POLL_WARN_INTERVAL_S`` (with the count of suppressed repeats) and at DEBUG otherwise. An
+    unthrottled poll logged ``Bot live-owner delivery poll failed`` ~2×/minute per session for days,
+    91% of an install's WARNING output (#111719)."""
     try:
         _poll_bot_live_delivery_once(sid, session)
     except Exception:
-        session["_bot_poll_retry_at"] = now + _BOT_POLL_FAILURE_BACKOFF_S
         suppressed = int(session.get("_bot_poll_warn_suppressed", 0))
         if now - session.get("_bot_poll_warned_at", -_BOT_POLL_WARN_INTERVAL_S) < _BOT_POLL_WARN_INTERVAL_S:
             session["_bot_poll_warn_suppressed"] = suppressed + 1
@@ -679,10 +772,12 @@ def _notification_poller_scoped_loop(stop_event: threading.Event, sid: str, sess
     emitted = session.setdefault("_notification_emitted", set())
     handle = lambda events, deferred: _notif_handle_ready(  # noqa: E731
         sid, session, events, emitted, process_registry, format_process_notification, deferred)
-    last_kanban_poll = last_loop_poll = 0.0
+    last_kanban_poll = last_loop_poll = last_bot_poll = 0.0
     while not stop_event.is_set() and not session.get("_finalized"):
         now = time.monotonic()
-        _poll_bot_live_delivery_guarded(sid, session, now)
+        if now - last_bot_poll >= _BOT_DELIVERY_POLL_SECONDS:  # bot DM → live-owner delivery latency ≤ 5 s
+            last_bot_poll = now
+            _poll_bot_live_delivery_guarded(sid, session, now)
         # /loop and /heartbeat wakeup drivers: fire a due tick for THIS session while idle (same claim-under-lock
         # as kanban dispatch). An active non-parked /goal owns the idle boundary and defers the loop tick.
         if now - last_loop_poll >= _LOOP_POLL_SECONDS:
@@ -705,7 +800,12 @@ def _notification_poller_scoped_loop(stop_event: threading.Event, sid: str, sess
                 ready.append(queue.get_nowait())
             except Exception:
                 break
-        handle(ready, None)
+        try:
+            handle(ready, None)
+        except Exception as exc:
+            # This thread is the session's only path to notifications, /loop, /heartbeat and its
+            # bot mailbox; one bad event must not end all four.
+            _notif_log_failure("notification dispatch failed", exc)
     # Drain remaining events after the stop signal so nothing is lost on shutdown; foreign and orphaned-delegation
     # events are handed back to the shared queue afterwards.
     deferred: list = []

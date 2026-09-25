@@ -291,10 +291,11 @@ def test_cli_reopen_review_is_transition_first_and_redacts_reason(
         assert secret not in comments[0].body
 
 
-def test_goal_mode_review_handoff_cannot_bypass_judge(
+def test_goal_mode_request_review_skips_judge_complete_does_not(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Request-review starts independent QA; complete still cannot bypass the judge."""
     home = tmp_path / ".hermes"
     home.mkdir()
     monkeypatch.setenv("HERMES_HOME", str(home))
@@ -328,15 +329,22 @@ def test_goal_mode_review_handoff_cannot_bypass_judge(
             False,
         ),
     )
-    rejected = json.loads(tools._handle_request_review({"summary": "Looks ready."}))
-    assert "error" in rejected
-    assert "rejected by judge" in rejected["error"]
+    refused = json.loads(tools._handle_complete({"summary": "Looks ready."}))
+    assert "error" in refused
+    assert "rejected by judge" in refused["error"]
+    with kbc.connect() as conn:
+        still_running = kb.get_task(conn, tool_task)
+        assert still_running is not None
+        assert still_running.status == "running"
+
+    accepted = json.loads(tools._handle_request_review({"summary": "Looks ready."}))
+    assert accepted.get("ok") is True, accepted
+    assert accepted.get("status") == "review"
     with kbc.connect() as conn:
         tool_after = kb.get_task(conn, tool_task)
         assert tool_after is not None
-        assert tool_after.status == "running"
+        assert tool_after.status == "review"
 
-    # The shell/CLI path applies the same gate and must not bypass the tool.
     with kbc.connect() as conn:
         cli_task = kb.create_task(
             conn,
@@ -363,11 +371,11 @@ def test_goal_mode_review_handoff_cannot_bypass_judge(
         lambda *args, **kwargs: ("continue", "tests are missing", False, None, False),
     )
     output = kc.run_slash(f"request-review {cli_task} --summary 'Looks ready.'")
-    assert "rejected by judge" in output
+    assert "rejected by judge" not in output
     with kbc.connect() as conn:
         cli_after = kb.get_task(conn, cli_task)
         assert cli_after is not None
-        assert cli_after.status == "running"
+        assert cli_after.status == "review"
 
 
 def test_goal_loop_stops_after_reviewer_requests_changes(

@@ -1,0 +1,13 @@
+=== ATO 3: recolocar o app no bundle novo  2026-09-21T01:51:20Z
+--- janela reconferida:
+=== JANELA  22:51:20  (silencio exigido: 5min)
+--- sessoes desktop com mensagem recente:
+(nenhuma)
+--- backend serve: "active_agents":0 "gateway_busy":false 
+--- turnos em voo (ultimo papel=user):
+(nenhum)
+VEREDITO: JANELA ABERTA
+rc_janela=0
+--- orfao a recolher: 6990 (arvore deletada) + backend 7022
+--- quit pela via suportada, sem sinal:
+osascript_rc=0

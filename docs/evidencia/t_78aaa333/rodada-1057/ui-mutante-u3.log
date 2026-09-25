@@ -1,0 +1,126 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:37:20). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/work/apps/desktop[39m
+
+[90mstderr[2m | src/plugins/kanban/approval-panel.test.tsx[2m > [22m[2mone explicit gesture authorizes only the displayed content
+[22m[39mAn error occurred in the <ApprovalDiagnosticsBlock> component.
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://react.dev/link/error-boundaries to learn more about error boundaries.
+
+
+[90mstderr[2m | src/plugins/kanban/approval-panel.test.tsx[2m > [22m[2mstays silent about diagnostics when the backend does not send them
+[22m[39mAn error occurred in the <ApprovalDiagnosticsBlock> component.
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://react.dev/link/error-boundaries to learn more about error boundaries.
+
+
+ [31m❯[39m [30m[45m ui [49m[39m src/plugins/kanban/approval-panel.test.tsx [2m([22m[2m5 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 24124[2mms[22m[39m
+[31m   [31m×[31m one explicit gesture authorizes only the displayed content[39m[33m 12016[2mms[22m[39m
+   [32m✓[39m does not offer a decision while content is unavailable[32m 74[2mms[22m[39m
+   [32m✓[39m names the wait reason, the next action, and never invents a resource cost[32m 9[2mms[22m[39m
+   [32m✓[39m offers Retry notice only when the delivery budget is exhausted, and it decides nothing[32m 19[2mms[22m[39m
+[31m   [31m×[31m stays silent about diagnostics when the backend does not send them[39m[33m 12004[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m [30m[45m ui [49m[39m src/plugins/kanban/approval-panel.test.tsx[2m > [22mone explicit gesture authorizes only the displayed content
+[31m[1mTestingLibraryElementError[22m: Unable to find an element with the text: /fixture/AGENTS.md. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div />[31m
+[36m</body>[31m
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div />[31m
+[36m</body>[31m[39m
+[90m [2m❯[22m waitForWrapper ../../node_modules/@testing-library/dom/dist/wait-for.js:[2m163:27[22m[39m
+[90m [2m❯[22m ../../node_modules/@testing-library/dom/dist/query-helpers.js:[2m86:33[22m[39m
+[36m [2m❯[22m src/plugins/kanban/approval-panel.test.tsx:[2m35:18[22m[39m
+    [90m 33|[39m   [35mtry[39m {
+    [90m 34|[39m     render(<QueryClientProvider client={client}><ApprovalPanel taskId=…
+    [90m 35|[39m     [35mawait[39m screen[33m.[39m[34mfindByText[39m([32m'/fixture/AGENTS.md'[39m)
+    [90m   |[39m                  [31m^[39m
+    [90m 36|[39m     expect(rest.mock.calls.filter(([, options]) => options?.method ===…
+    [90m 37|[39m     fireEvent.click(screen.getByRole('button', { name: 'Approve once' …
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m [30m[45m ui [49m[39m src/plugins/kanban/approval-panel.test.tsx[2m > [22mstays silent about diagnostics when the backend does not send them
+[31m[1mTestingLibraryElementError[22m: Unable to find an element with the text: /fixture/AGENTS.md. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div />[31m
+[36m</body>[31m
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div />[31m
+[36m</body>[31m[39m
+[90m [2m❯[22m waitForWrapper ../../node_modules/@testing-library/dom/dist/wait-for.js:[2m163:27[22m[39m
+[90m [2m❯[22m ../../node_modules/@testing-library/dom/dist/query-helpers.js:[2m86:33[22m[39m
+[36m [2m❯[22m src/plugins/kanban/approval-panel.test.tsx:[2m150:18[22m[39m
+    [90m148|[39m   [35mtry[39m {
+    [90m149|[39m     render(<QueryClientProvider client={client}><ApprovalPanel taskId=…
+    [90m150|[39m     [35mawait[39m screen[33m.[39m[34mfindByText[39m([32m'/fixture/AGENTS.md'[39m)
+    [90m   |[39m                  [31m^[39m
+    [90m151|[39m     [34mexpect[39m(screen[33m.[39m[34mqueryByLabelText[39m([32m'Wait diagnostics'[39m))[33m.[39m[34mtoBeNull[39m()
+    [90m152|[39m     expect(screen.queryByRole('button', { name: 'Retry notice' })).toB…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Unhandled Errors [49m[22m[31m⎯⎯⎯⎯⎯⎯[39m
+[31m[1m
+Vitest caught 2 unhandled errors during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.[22m[39m
+
+[31m⎯⎯⎯⎯⎯[39m[1m[41m Uncaught Exception [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mTypeError[22m: Cannot read properties of undefined (reading 'delivery_attempts')[39m
+[90m [2m❯[22m ApprovalDiagnosticsBlock src/plugins/kanban/approval-panel.tsx:[2m35:31[22m[39m
+[90m [2m❯[22m Object.react_stack_bottom_frame ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m25904:20[22m[39m
+[90m [2m❯[22m renderWithHooks ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m7662:22[22m[39m
+[90m [2m❯[22m updateFunctionComponent ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m10166:19[22m[39m
+[90m [2m❯[22m beginWork ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m11778:18[22m[39m
+[90m [2m❯[22m runWithFiberInDEV ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m874:13[22m[39m
+[90m [2m❯[22m performUnitOfWork ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m17641:22[22m[39m
+[90m [2m❯[22m workLoopSync ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m17469:41[22m[39m
+[90m [2m❯[22m renderRootSync ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m17450:11[22m[39m
+[90m [2m❯[22m performWorkOnRoot ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m16583:35[22m[39m
+
+[31mThis error originated in "[1msrc/plugins/kanban/approval-panel.test.tsx[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31mThe latest test that might've caused the error is "[1mone explicit gesture authorizes only the displayed content[22m". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.[39m
+
+[31m⎯⎯⎯⎯⎯[39m[1m[41m Uncaught Exception [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mTypeError[22m: Cannot read properties of null (reading 'delivery_attempts')[39m
+[90m [2m❯[22m ApprovalDiagnosticsBlock src/plugins/kanban/approval-panel.tsx:[2m35:31[22m[39m
+[90m [2m❯[22m Object.react_stack_bottom_frame ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m25904:20[22m[39m
+[90m [2m❯[22m renderWithHooks ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m7662:22[22m[39m
+[90m [2m❯[22m updateFunctionComponent ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m10166:19[22m[39m
+[90m [2m❯[22m beginWork ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m11778:18[22m[39m
+[90m [2m❯[22m runWithFiberInDEV ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m874:13[22m[39m
+[90m [2m❯[22m performUnitOfWork ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m17641:22[22m[39m
+[90m [2m❯[22m workLoopSync ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m17469:41[22m[39m
+[90m [2m❯[22m renderRootSync ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m17450:11[22m[39m
+[90m [2m❯[22m performWorkOnRoot ../../node_modules/react-dom/cjs/react-dom-client.development.js:[2m16583:35[22m[39m
+
+[31mThis error originated in "[1msrc/plugins/kanban/approval-panel.test.tsx[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31mThe latest test that might've caused the error is "[1mstays silent about diagnostics when the backend does not send them[22m". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.[39m
+[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m3 passed[39m[22m[90m (5)[39m
+[2m     Errors [22m [1m[31m2 errors[39m[22m
+[2m   Start at [22m 22:31:51
+[2m   Duration [22m 29.83s[2m (transform 4.01s, setup 68ms, import 5.18s, tests 24.12s, environment 301ms)[22m
+

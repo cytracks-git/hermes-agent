@@ -1,0 +1,7 @@
+# Alvos que existem SO no candidato (card t_78aaa333).
+#
+# Ficam fora da comparacao de proposito: um arquivo de teste que nasce com a
+# implementacao nao tem contraparte no baseline, entao incluir na lista comum
+# criaria uma diferenca artificial e mascararia as reais. Rodam a parte e sao
+# reportados a parte.
+tests/hermes_cli/test_kanban_approval_wait.py

@@ -1,0 +1,33 @@
+[
+  {
+    "request_id": "9166830add844f338a369649ad385769",
+    "state": "consumed",
+    "applied_at": 1789932448,
+    "created_by_pid": 2837,
+    "run_id": 1,
+    "status": "running",
+    "current_run_id": 1,
+    "worker_pid": 2837,
+    "same_claim": 1
+  },
+  {
+    "request_id": "bc8a0fc307d44db296e8eba98041a4f7",
+    "state": "denied",
+    "applied_at": null,
+    "created_by_pid": 2911,
+    "run_id": 2,
+    "status": "blocked",
+    "current_run_id": null,
+    "worker_pid": null,
+    "same_claim": null
+  }
+]
+click_to_visible_running_seconds=2.539
+deny_to_visible_blocked_seconds=0.521
+uid=502
+/tmp/lab/positive/other.txt b'old\n' 01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee
+/tmp/lab/positive/AGENTS.md b'approved\n' 7f8518f7db5e9a55049f49c4ea6d6e8f509695231e60cbd607bcb36c88a75a14
+/tmp/lab/positive/result.json b'{"success": true, "verified": true, "files_modified": ["/tmp/lab/positive/AGENTS.md"], "diff": "--- /tmp/lab/positive/AGENTS.md\\n+++ /tmp/lab/positive/AGENTS.md\\n@@ -1 +1 @@\\n-old\\n+approved\\n", "approval_request_id": "9166830add844f338a369649ad385769"}' fad8deffb0747818adc5189cb6ca198e3f5508b85743c5e347de9f6bb138897a
+/tmp/lab/negative/other.txt b'old\n' 01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee
+/tmp/lab/negative/AGENTS.md b'old\n' 01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee
+/tmp/lab/negative/result.json b'{"error": "BLOCKED: Approval denied; no write performed"}' ae666a4f8d68245629f59479f05083f8881003d029acc3ceb77c78807d3c2072
