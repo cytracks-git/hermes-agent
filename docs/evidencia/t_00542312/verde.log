@@ -1,0 +1,4 @@
+WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+uid=502 gid=20(dialout) groups=20(dialout)
+....................                                                     [100%]
+20 passed in 2.37s
