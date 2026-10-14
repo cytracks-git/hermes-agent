@@ -1,0 +1,68 @@
+
+> web@0.0.0 build
+> tsc -b && vite build
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:85:25). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+vite v8.2.0 building client environment for production...
+[2Ktransforming...✓ 2243 modules transformed.
+rendering chunks...
+computing gzip size...
+../hermes_cli/web_dist/index.html                                       1.50 kB │ gzip:   0.54 kB
+../hermes_cli/web_dist/assets/Mondwest-Regular-CWscgue7.woff2          23.82 kB
+../hermes_cli/web_dist/assets/RulesExpanded-Regular-l8uVympt.woff2     33.82 kB
+../hermes_cli/web_dist/assets/RulesExpanded-Bold-DZA7s8Pa.woff2        35.01 kB
+../hermes_cli/web_dist/assets/RulesCompressed-Regular-BSXFyF4x.woff2   37.76 kB
+../hermes_cli/web_dist/assets/RulesCompressed-Medium-CA76_CrB.woff2    38.84 kB
+../hermes_cli/web_dist/assets/Collapse-Bold-mgICk9-_.woff2             59.14 kB
+../hermes_cli/web_dist/assets/Collapse-Regular-DysayoTY.woff2          62.81 kB
+../hermes_cli/web_dist/assets/xterm-BrP-ENHg.css                        3.93 kB │ gzip:   1.01 kB
+../hermes_cli/web_dist/assets/index-CVz44OD6.css                      112.46 kB │ gzip:  17.61 kB
+../hermes_cli/web_dist/assets/chat-activation-BiaqYo9D.js               0.04 kB │ gzip:   0.06 kB
+../hermes_cli/web_dist/assets/page-header-context-Cv8A-rTa.js           0.15 kB │ gzip:   0.14 kB
+../hermes_cli/web_dist/assets/useProfileScope-CZ2qacRL.js               0.26 kB │ gzip:   0.21 kB
+../hermes_cli/web_dist/assets/usePageHeader-BtGwRGnc.js                 0.30 kB │ gzip:   0.23 kB
+../hermes_cli/web_dist/assets/utils-Bpcp-Df0.js                         0.53 kB │ gzip:   0.29 kB
+../hermes_cli/web_dist/assets/rolldown-runtime-CbXtAM7H.js              0.58 kB │ gzip:   0.36 kB
+../hermes_cli/web_dist/assets/DeleteConfirmDialog-2N811a3S.js           0.61 kB │ gzip:   0.37 kB
+../hermes_cli/web_dist/assets/useModalBehavior-oWox1GPh.js              0.62 kB │ gzip:   0.39 kB
+../hermes_cli/web_dist/assets/clipboard-owkvc3zk.js                     0.73 kB │ gzip:   0.44 kB
+../hermes_cli/web_dist/assets/mcp-server-create-B0VgoYzF.js             0.92 kB │ gzip:   0.46 kB
+../hermes_cli/web_dist/assets/LoadErrorNotice-cS12jZo7.js               1.74 kB │ gzip:   0.90 kB
+../hermes_cli/web_dist/assets/DocsPage-l-uh5JzS.js                      1.96 kB │ gzip:   1.08 kB
+../hermes_cli/web_dist/assets/PairingPage-9ns3bfyJ.js                   4.88 kB │ gzip:   1.67 kB
+../hermes_cli/web_dist/assets/plugins-C6AhybYk.js                       5.55 kB │ gzip:   2.61 kB
+../hermes_cli/web_dist/assets/LogsPage-BDWIV6Ym.js                      7.50 kB │ gzip:   3.29 kB
+../hermes_cli/web_dist/assets/FilesPage-8E-8gufX.js                     9.81 kB │ gzip:   3.25 kB
+../hermes_cli/web_dist/assets/WebhooksPage-DY2dPxQz.js                 12.59 kB │ gzip:   3.84 kB
+../hermes_cli/web_dist/assets/themes-BacpX6r-.js                       12.99 kB │ gzip:   4.40 kB
+../hermes_cli/web_dist/assets/ModelReloadConfirm-CaTfcx2j.js           13.95 kB │ gzip:   5.14 kB
+../hermes_cli/web_dist/assets/ProfileBuilderPage-BlGbB99Y.js           14.87 kB │ gzip:   4.50 kB
+../hermes_cli/web_dist/assets/McpPage-DJ4vxEIi.js                      17.82 kB │ gzip:   5.22 kB
+../hermes_cli/web_dist/assets/ConfigPage-BiJVvKT6.js                   18.00 kB │ gzip:   6.02 kB
+../hermes_cli/web_dist/assets/AnalyticsPage-if1UFWQr.js                20.17 kB │ gzip:   6.00 kB
+../hermes_cli/web_dist/assets/ProfilesPage-BZMiTxbg.js                 25.27 kB │ gzip:   7.11 kB
+../hermes_cli/web_dist/assets/ChannelsPage-BhTbl0J-.js                 29.19 kB │ gzip:   8.07 kB
+../hermes_cli/web_dist/assets/EnvPage-D3oG_EEE.js                      29.76 kB │ gzip:   7.95 kB
+../hermes_cli/web_dist/assets/PluginsPage-Br2ijwnp.js                  33.44 kB │ gzip:   9.71 kB
+../hermes_cli/web_dist/assets/ModelsPage-C924tlx8.js                   33.98 kB │ gzip:  10.51 kB
+../hermes_cli/web_dist/assets/SystemPage-DIQay_fg.js                   43.16 kB │ gzip:  11.68 kB
+../hermes_cli/web_dist/assets/SkillsPage-Da2pqWb5.js                   44.70 kB │ gzip:  12.68 kB
+../hermes_cli/web_dist/assets/CronPage-BLLQG1LN.js                     45.40 kB │ gzip:  14.65 kB
+../hermes_cli/web_dist/assets/api-DDCd849m.js                          46.27 kB │ gzip:  11.87 kB
+../hermes_cli/web_dist/assets/SessionsPage-wOOQiK5P.js                 46.42 kB │ gzip:  14.20 kB
+../hermes_cli/web_dist/assets/ChatPage-DE_-Y-zf.js                     46.53 kB │ gzip:  16.13 kB
+../hermes_cli/web_dist/assets/vendor-B7eZBWFZ.js                       50.06 kB │ gzip:  17.82 kB
+../hermes_cli/web_dist/assets/index-nmyHh-yX.js                        66.56 kB │ gzip:  22.90 kB
+../hermes_cli/web_dist/assets/react-vendor-BoVnYuL4.js                226.99 kB │ gzip:  72.78 kB
+../hermes_cli/web_dist/assets/ui-D6CeFIrh.js                          290.01 kB │ gzip:  94.81 kB
+../hermes_cli/web_dist/assets/xterm-CXxU4Y2B.js                       474.38 kB │ gzip: 122.64 kB
+../hermes_cli/web_dist/assets/i18n-BcghTAC4.js                        484.49 kB │ gzip: 143.38 kB
+
+[33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+  - @rolldown/plugin-babel (91%)
+  - @tailwindcss/vite:generate:build (4%)
+See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+
+✓ built in 3.06s

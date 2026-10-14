@@ -1,0 +1,31 @@
+# CHECKPOINT DEPOIS  2026-09-21T02:19:03Z
+## sessoes desktop ABERTAS (id|msgs|ultimo_ts|titulo) — as que o fechamento atinge
+20260918_145411_88ea86|86|1789872079|Atlas #892 · Validar consumo alto de tokens
+20260918_223759_871535|168|1789873428|Atlas #893 · Analisar atrasos nas ati
+20260919_075233_1d0000|460|1789824532|Continuar análise de atrasos e RCA de processos >1
+20260919_102310_bac26e|954|1789870297|Orquestrar Kanban ágil s
+20260919_103105_2ce1a7|172|1789826762|puxa as ultimas atividade dessa sessao e…
+20260919_110527_15aa2d|3|1789826814|quero q vc olhe novamente a fila do kanban e…
+20260919_113103_8724f0|1|1789828264|tem um monte de sessao de gitleak no kanban…
+20260919_113746_a19f47|50|1789833457|Validar 3 cards em ready sem worker no kanban
+20260919_201934_087880|412|1789872344|como foi o Dia
+20260919_210513_196e1a|1077|1789882656|Alinhar SDD-v4 ao Kanban
+20260919_215456_7cd239|60|1789925371|Confirmar deploy automático para atlas.local
+20260919_221522_76b5c9|1|1789866923|teste
+20260920_001932_893e04|41|1789875202|Confirmar uso de RTK
+20260920_002734_46f60a|691|1789888104|Atlas #894 · Continue SDD v5 from card t_63731007 
+20260920_003534_2abb3c|14|1789875532|Diagrama mermaid 5-passos publicação
+20260920_041002_636708|109|1789954559|Atlas #895 · Homologar SDD v5 0.2 com Kanban
+20260920_120540_c0d24d|142|1789917992|Teste
+20260920_164003_9511e3|68|1789956892|Otimizar skills, agents
+20260920_193706_75687b|2|1789943830|Teste de conversa
+## runs Kanban abertas (id|task|pid) — NAO atingidas (ppid=1), conferir que seguem vivas
+582|t_78aaa333|98991
+## cron: jobs ativos por perfil (o ticker do app fica de fora quando o gateway serve o perfil)
+default|7
+arquiteto|0
+executor|1
+pesquisa|0
+revisor|0
+## perfis servidos pelo gateway (se o gateway serve, o ticker do Desktop se recolhe)
+"served_profiles":["default","arquiteto","executor","pesquisa","revisor"]

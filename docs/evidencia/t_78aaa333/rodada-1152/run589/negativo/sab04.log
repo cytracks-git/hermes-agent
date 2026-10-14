@@ -1,0 +1,78 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python3
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: detected dubious ownership in repository at '/work'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /work
+▶ launching test runner
+Discovered 1 test files (~25 tests) under ['tests/hermes_cli/test_kanban_approval_wait.py']; running with -j 28
+[100.0% |    25/~25 | ✓13 | ✗15] ✗ tests/hermes_cli/test_kanban_approval_wait.py (13✓ 15✗, 18.8s)
+
+  ╔╍ Failed: tests/hermes_cli/test_kanban_approval_wait.py ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+  ║ /usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+  ║ The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+  ║ 
+  ║   warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+  ║ ...........FFFFFFFFF.FFFFFF.                                             [100%]
+  ║ =========================== short test summary info ============================
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_pause_releases_claim_and_slot_without_ending_the_run
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_pause_does_not_count_a_failure_or_a_block_recurrence
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_pause_refuses_a_stale_run_id
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_the_five_recycling_sweeps_leave_a_paused_card_alone
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_recompute_ready_never_promotes_a_paused_card
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_a_paused_card_is_not_claimable
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_unblock_task_is_not_a_door_out_of_the_wait
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_resume_restores_identity_in_the_same_cas
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_resume_fails_closed_when_the_card_left_the_wait
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_resume_closes_the_wait_window_and_accumulates_it
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_every_exit_without_a_write_lands_on_blocked_needs_input[cancelled-approval_cancelled]
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_every_exit_without_a_write_lands_on_blocked_needs_input[denied-approval_denied]
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_every_exit_without_a_write_lands_on_blocked_needs_input[obsolete-approval_obsolete]
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_every_exit_without_a_write_lands_on_blocked_needs_input[orphaned-approval_orphaned]
+  ║ FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_only_a_human_deny_counts_a_block_recurrence
+  ║ 15 failed, 13 passed in 8.99s
+  ║
+  ║  Repro: python -m pytest tests/hermes_cli/test_kanban_approval_wait.py --tb=no -rf -q
+  ╚╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+
+=== Summary: 1 files, 13 tests passed, 15 failed (100% complete) in 18.8s (28 workers) ===
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 18.8s  (runner wall: 18.8s, parallelism: 28x)
+  P50: 18.81s  P90: 18.81s  P95: 18.81s  P99: 18.81s  Max: 18.81s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+     18.81s  tests/hermes_cli/test_kanban_approval_wait.py
+
+=== Failure output ===
+
+--- tests/hermes_cli/test_kanban_approval_wait.py ---
+/usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+...........FFFFFFFFF.FFFFFF.                                             [100%]
+=========================== short test summary info ============================
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_pause_releases_claim_and_slot_without_ending_the_run
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_pause_does_not_count_a_failure_or_a_block_recurrence
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_pause_refuses_a_stale_run_id
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_the_five_recycling_sweeps_leave_a_paused_card_alone
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_recompute_ready_never_promotes_a_paused_card
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_a_paused_card_is_not_claimable
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_unblock_task_is_not_a_door_out_of_the_wait
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_resume_restores_identity_in_the_same_cas
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_resume_fails_closed_when_the_card_left_the_wait
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_resume_closes_the_wait_window_and_accumulates_it
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_every_exit_without_a_write_lands_on_blocked_needs_input[cancelled-approval_cancelled]
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_every_exit_without_a_write_lands_on_blocked_needs_input[denied-approval_denied]
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_every_exit_without_a_write_lands_on_blocked_needs_input[obsolete-approval_obsolete]
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_every_exit_without_a_write_lands_on_blocked_needs_input[orphaned-approval_orphaned]
+FAILED tests/hermes_cli/test_kanban_approval_wait.py::test_only_a_human_deny_counts_a_block_recurrence
+15 failed, 13 passed in 8.99s
+
+=== 1 file with test failures (15 tests failed) ===
+  tests/hermes_cli/test_kanban_approval_wait.py  (15 tests failed)

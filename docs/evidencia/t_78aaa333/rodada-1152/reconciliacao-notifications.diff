@@ -1,0 +1,148 @@
+diff --git a/tui_gateway/session_notifications.py b/tui_gateway/session_notifications.py
+index b771e8c8205..1cccae9f268 100644
+--- a/tui_gateway/session_notifications.py
++++ b/tui_gateway/session_notifications.py
+@@ -131,11 +131,11 @@ def _notification_event_dedup_key(evt: dict) -> tuple:
+     return (evt.get("session_id", ""), evt_type, *(evt.get(f, 0 if f == "suppressed" else "") for f in extra))
+ 
+ 
+-# Mirror gateway/kanban_watchers.py TERMINAL_KINDS: claim silent kinds (archived/unblocked) too so the cursor advances
+-# past them and they can't wedge a later completed/blocked event behind an unclaimed row.
+-_KANBAN_NOTIFY_KINDS = ("completed", "blocked", "gave_up", "crashed", "timed_out", "status", "archived", "unblocked")
+-# kanban, /loop + /heartbeat and the bot mailbox share one idle-poll cadence; probing the lease registry on
+-# every 0.5s queue timeout cost ~a core at 11 sessions (#108005).
++# Kinds atendidos pelo TUI; aprovação avisa a pessoa, sem turno de modelo.
++# archived/unblocked avançam o cursor silenciosamente.
++_KANBAN_NOTIFY_KINDS = ("completed", "blocked", "gave_up", "crashed", "timed_out", "status", "archived", "unblocked", "approval_requested")
++# Preserva a cadência da main: consultar o registro a cada 0,5 s consumia
++# aproximadamente um núcleo com 11 sessões (#108005).
+ _KANBAN_POLL_SECONDS = _LOOP_POLL_SECONDS = _BOT_DELIVERY_POLL_SECONDS = 5.0
+ 
+ 
+@@ -318,6 +318,9 @@ def _kb_timed_out(task, payload: dict, title: str) -> str:
+ 
+ # kind -> (glyph, suffix after "Kanban <id>"); silent kinds (archived/unblocked) are absent → None.
+ _KANBAN_EVENT_FORMATTERS = {
++    "approval_requested": ("🔐", lambda t, p, title: f" needs file approval — {title}. "
++                           f"Request {p.get('request_id', '')}. Open File approvals in Kanban. "
++                           "Comments do not authorize writes."),
+     "completed": ("✔", _kb_completed),
+     "blocked": ("⏸", lambda t, p, title: " blocked" + (f": {str(p.get('reason'))[:160]}" if p.get("reason") else "")),
+     "gave_up": ("✖", lambda t, p, title: " gave up after repeated spawn failures"
+@@ -351,7 +354,8 @@ def _kb_board_key(_kb, board_meta) -> tuple[str, str]:
+         return slug, f"slug:{slug}"
+ 
+ 
+-def _kb_poll_board(_kb, slug: str, session_key: str) -> list:
++def _kb_poll_board(_kb, slug: str, session_key: str, approval_delivery=None,
++                   approval_generation: str = "none") -> list:
+     """Claim + format this session's unseen events on one board. One poller per live session: the board is not opened
+     writable unless it has a subscription owned by this exact session (a failed read-only probe — locked/corrupt DB —
+     falls through so delivery is preserved)."""
+@@ -383,6 +387,14 @@ def _kb_poll_board(_kb, slug: str, session_key: str) -> list:
+             from gateway.warning_notifications import DiagnosticText
+             for ev in events:
+                 text = _format_kanban_event_text(sub, task, ev, slug)
++                if ev.kind == "approval_requested":
++                    if ev.id <= (sub.get("last_ping_event_id") or 0):
++                        continue
++                    if not _kb_deliver_approval_notice(
++                            conn, sub_ident, ev, text, approval_delivery,
++                            approval_generation, claimed_cursor=_new):
++                        break
++                    continue
+                 if text:
+                     texts.append(DiagnosticText(text) if diagnostic_event(ev) else text)
+             # Unsubscribe only on archive: ``done`` is reversible in review/controller flows, so keeping the sub lets a
+@@ -393,7 +405,62 @@ def _kb_poll_board(_kb, slug: str, session_key: str) -> list:
+     return texts
+ 
+ 
+-def _collect_kanban_notifications(session: dict) -> list:
++def _kb_deliver_approval_notice(conn, sub_ident, ev, text, approval_delivery,
++                                generation: str, *, claimed_cursor) -> bool:
++    """Entrega UM aviso de aprovação e registra o desfecho. ``True`` = seguir.
++
++    Duas coisas mudam em relação ao laço anterior, que tentava para sempre:
++
++    1. O orçamento por geração de transporte (``notice_budget_open``) evita que
++       uma conexão morta reenfileire o mesmo frame indefinidamente. Esgotar NÃO
++       decide, não cancela e não redespacha a escrita — o pedido continua
++       exatamente como está, só para de bater na mesma porta. Uma reconexão real
++       traz geração nova e orçamento novo por construção.
++    2. Cada tentativa vira observação durável, então o painel mostra "Delivery
++       failed (2/3)" em vez de silêncio. O rótulo é sempre de TRANSPORTE: recibo
++       não prova leitura humana.
++
++    O cursor continua rebobinado em toda falha, inclusive na que esgota o
++    orçamento: nada de recibo sem entrega.
++    """
++    from hermes_cli import kanban_approval_diagnostics as diag
++    from hermes_cli import kanban_db_notify as _kbn
++    try:
++        open_budget = diag.notice_budget_open(
++            conn, sub_ident["task_id"], _kb_notice_request_id(ev), generation)
++    except Exception:
++        open_budget = True
++    if not open_budget:
++        _kbn.rewind_notify_cursor(conn, claimed_cursor=claimed_cursor, old_cursor=ev.id - 1, **sub_ident)
++        return False
++    try:
++        delivered = bool(text and approval_delivery and approval_delivery(text))
++    except Exception as exc:
++        _notif_log_failure("kanban approval delivery failed", exc)
++        delivered = False
++    with contextlib.suppress(Exception):
++        diag.record_notice_outcome(
++            conn, task_id=sub_ident["task_id"], run_id=getattr(ev, "run_id", None),
++            request_id=_kb_notice_request_id(ev), generation=generation, delivered=delivered)
++    if not delivered:
++        # Falha de transporte não vira recibo nem acorda modelo.
++        _kbn.rewind_notify_cursor(conn, claimed_cursor=claimed_cursor, old_cursor=ev.id - 1, **sub_ident)
++        return False
++    _kbn.record_notify_ping(conn, event_id=ev.id, **sub_ident)
++    return True
++
++
++def _kb_notice_request_id(ev) -> str:
++    """``request_id`` do evento; ``evento:<id>`` quando o payload não o traz.
++
++    Sem identidade de pedido o orçamento seria global e uma request barulhenta
++    calaria as outras; o fallback mantém a contagem por evento.
++    """
++    payload = getattr(ev, "payload", None) or {}
++    return str(payload.get("request_id") or f"event:{ev.id}")
++
++
++def _collect_kanban_notifications(session: dict, approval_delivery=None) -> list:
+     """Claim unseen terminal kanban events for this session's ``platform="tui"`` subscriptions (``kanban_create``
+     auto-subscribes with ``chat_id=HERMES_SESSION_KEY``; no "tui" messaging adapter exists, so this poller is the
+     delivery path). Same atomic cursor-claim as the gateway notifier: exactly-once even if a gateway polls the same DB.
+@@ -418,7 +485,16 @@ def _collect_kanban_notifications(session: dict) -> list:
+     unique = {}
+     for slug, resolved in (_kb_board_key(_kb, board_meta) for board_meta in boards):
+         unique.setdefault(resolved, slug)
+-    return [t for slug in unique.values() for t in _kb_poll_board(_kb, slug, session_key)]
++    # A geração vem do OBJETO de transporte desta sessão: reconectar troca o
++    # objeto e ganha orçamento novo sem depender de relógio nem de contador de
++    # processo (que um restart zeraria em silêncio).
++    try:
++        from hermes_cli import kanban_approval_diagnostics as _diag
++        generation = _diag.transport_generation(session.get("transport"))
++    except Exception:
++        generation = "none"
++    return [t for slug in unique.values()
++            for t in _kb_poll_board(_kb, slug, session_key, approval_delivery, generation)]
+ 
+ 
+ def _notif_poll_kanban(sid: str, session: dict) -> None:
+@@ -430,7 +506,8 @@ def _notif_poll_kanban_scoped(sid: str, session: dict) -> None:
+     """One kanban poll: emit new texts, buffer them, and run the buffered batch as a turn if idle. Events are
+     cursor-claimed (never re-queued), so they wait in the buffer instead of dropping the agent turn."""
+     try:
+-        texts = _collect_kanban_notifications(session)
++        texts = _collect_kanban_notifications(session, approval_delivery=lambda text:
++            _emit("status.update", sid, {"kind": "process", "text": text}))
+     except Exception as exc:
+         _notif_log_failure("kanban notification poll failed", exc)
+         texts = []

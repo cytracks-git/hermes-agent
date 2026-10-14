@@ -1,0 +1,1 @@
+tests/hermes_cli/test_kanban_approval_diagnostics.py::test_granted_without_an_observation_reports_not_yet_observed

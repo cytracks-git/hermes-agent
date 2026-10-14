@@ -56,13 +56,32 @@ TERMINAL_WORKER_REAP_GRACE_SECONDS = 120
 
 # Patterns in last_failure_error that indicate a quota / auth blocker.
 # These errors won't resolve by retrying immediately — auto-block instead.
+# The auth family is a curated list, not an open `auth\w*` stem: that stem
+# also matched ordinary English words like "author"/"authored"/"authoring"/
+# "authoritative" in worker progress prose, parking a healthy card forever
+# (#117009).
 _RESPAWN_BLOCKER_RE = re.compile(
-    r"\b(quota|rate[\s_\-]?limit|429|403|auth\w*|"
+    r"\b(quota|rate[\s_\-]?limit|429|403|"
+    r"auth|authenticat(?:e|es|ed|ing|ion)|authoriz(?:e|es|ed|ing|ation)|"
+    r"authoris(?:e|es|ed|ing|ation)|authz|"
     r"unauthorized|forbidden|billing|subscription|"
     r"access[\s_]denied|permission[\s_]denied|"
     r"invalid[\s_]api[\s_]key)\b",
     re.IGNORECASE,
 )
+
+# Outcomes cujo run posterior SUPERA um ``last_failure_error`` antigo: o worker
+# chegou ao fim e fez uma transição terminal por conta própria, então qualquer
+# texto de falha ainda gravado é resíduo de uma tentativa anterior — não um
+# diagnóstico do estado atual do card. ``crashed`` entra aqui por outro motivo
+# (o texto persistido inclui o stdout capturado do worker, que é contexto e não
+# diagnóstico — #117097). Sem isso, um texto de quota de 22/09 mantinha
+# ``blocker_auth`` para sempre num card cujo último run foi ``blocked``: a
+# proteção de ``rate_limited`` só olha o ``latest_run``, e ao ser superada por
+# um run de outra natureza a armadilha descrita no docstring abaixo se fechava.
+_RESPAWN_BLOCKER_SUPERSEDING_OUTCOMES = frozenset({
+    "completed", "review_requested", "changes_requested", "blocked", "crashed",
+})
 
 # Within this window a completed run counts as "recent proof"; don't re-spawn.
 _RESPAWN_GUARD_SUCCESS_WINDOW = 3600  # 1 hour
@@ -76,10 +95,21 @@ DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS = 300  # 5 minutes
 # Within this window a GitHub PR URL in a comment blocks re-spawn.
 _RESPAWN_GUARD_PR_WINDOW = 86400  # 24 hours
 
+# Rel freeze already recorded on the delivery column. Spawning a closer/reviewer
+# on that leftover occupies the lane and starves real work.
+_DELIVERY_CLOSED = frozenset({"integrated", "verified", "installed"})
+
 _RESPAWN_GUARD_PR_URL_RE = re.compile(
     r"https?://github\.com/[^/\s]+/[^/\s]+/pull/\d+",
     re.IGNORECASE,
 )
+
+# A deliberate "run this again" written by an operator or by the lifecycle:
+# a direct status write (dashboard drag), the auto-promotion that fires when the
+# last parent finishes, ``hermes kanban promote`` (``promoted_manual``), and an
+# unblock. ``reclaimed`` is in the ``recent_success`` set only — a crash reclaim
+# is recovery, never an instruction to re-run against an open PR.
+_REQUEUE_EVENT_KINDS = ("status", "promoted", "promoted_manual", "unblocked")
 
 
 @dataclass
@@ -102,6 +132,11 @@ class DispatchResult:
     reconciled_orphans: list[str] = field(default_factory=list)
     """``running`` cards requeued by :func:`reconcile_orphaned_running` (broken
     claim bookkeeping, dead/gone worker)."""
+    released_parked_claims: list[str] = field(default_factory=list)
+    """Cards FORA de voo (``ready``/``review``/``todo``/...) cuja claim residual
+    foi limpa por :func:`reconcile_parked_claim_residue`. Sem isso o card fica
+    invisível para ``_lane_rows`` (que exige ``claim_lock IS NULL``) e nenhuma
+    varredura de reclaim o alcança — todas filtram ``status='running'``."""
     reaped_terminal_workers: list[str] = field(default_factory=list)
     """Task ids whose worker outlived its closed run and was terminated by
     :func:`reap_terminal_workers`."""
@@ -134,7 +169,9 @@ class DispatchResult:
     respawn_guarded: list[tuple[str, str]] = field(default_factory=list)
     """``(task_id, reason)`` skipped by the respawn guard: ``"blocker_auth"``
     (quota/auth error — also auto-blocked), ``"recent_success"`` (completed run
-    within guard window), ``"active_pr"`` (GitHub PR URL in a recent comment)."""
+    within guard window), ``"active_pr"`` (GitHub PR URL in a recent comment),
+    ``"delivery_closed"`` (delivery already integrated/verified/installed —
+    leftover must not consume a worker)."""
     rate_limited: list[str] = field(default_factory=list)
     """Task ids whose workers bailed on a provider rate-limit / quota wall
     (EX_TEMPFAIL sentinel exit) and were released to ``ready`` WITHOUT counting
@@ -394,19 +431,36 @@ def _pid_recycled(pid: Optional[int], started_at) -> bool:
     """True when a live ``pid`` is NOT the process fingerprinted at spawn (or the fingerprint can no
     longer be read). Signalling it would hit a stranger. ``None`` fingerprint = legacy row, never
     recycled; the UNVERIFIED marker is always foreign. An integer fingerprint (rows written before the
-    boot witness was added) compares the start time only."""
+    boot witness was added) compares the start time only.
+
+    Same-host start-time readings drift by ~1 s on macOS (``kern.boottime`` / psutil
+    ``create_time()``, #117505). Exact ``epoch|start`` string equality therefore marks a live
+    worker crashed, duplicates the writer and SIGTERMs in-flight calls. Epoch still has to match
+    exactly (reboot / container recreate); the start tick uses
+    ``start_time_fingerprints_match`` (2 s in the ×100 fingerprint scale).
+    """
     if started_at is None or not pid:
         return False
     if started_at == UNVERIFIED_WORKER_FINGERPRINT:
         return True
+    from gateway.status import get_process_start_time, start_time_fingerprints_match
     if isinstance(started_at, str) and "|" in started_at:
-        return _process_fingerprint(int(pid)) != started_at
-    from gateway.status import _start_times_agree, get_process_start_time
+        current = _process_fingerprint(int(pid))
+        if current is None:
+            return True
+        rec_epoch, _, rec_start = started_at.partition("|")
+        cur_epoch, _, cur_start = current.partition("|")
+        if rec_epoch != cur_epoch:
+            return True
+        try:
+            return not start_time_fingerprints_match(rec_start, cur_start)
+        except (TypeError, ValueError):
+            return True
     current = get_process_start_time(int(pid))
     if current is None:
         return True
     try:
-        return not _start_times_agree(current, started_at)
+        return not start_time_fingerprints_match(current, started_at)
     except (TypeError, ValueError):
         return True
 
@@ -657,6 +711,7 @@ def enforce_max_runtime(conn: sqlite3.Connection, *, signal_fn=None) -> list[str
     rows = conn.execute(
         "SELECT t.id, t.worker_pid, t.worker_started_at, "
         "       COALESCE(r.started_at, t.started_at) AS active_started_at, "
+        "       COALESCE(r.approval_wait_seconds, 0) AS approval_wait_seconds, "
         "       t.max_runtime_seconds, t.claim_lock "
         "FROM tasks t "
         "LEFT JOIN task_runs r ON r.id = t.current_run_id "
@@ -669,8 +724,12 @@ def enforce_max_runtime(conn: sqlite3.Connection, *, signal_fn=None) -> list[str
         if not lock.startswith(host_prefix):
             continue
         # Runtime is per attempt: ``tasks.started_at`` records the FIRST start,
-        # so retries must be measured from the active task_runs row.
-        elapsed = now - int(row["active_started_at"])
+        # so retries must be measured from the active task_runs row. Time the run
+        # spent parked in ``waiting_approval`` is discounted: a human taking a day
+        # to answer an approval prompt must not read as an agent that wedged
+        # (contrato t_78aaa333 T-3).
+        elapsed = now - int(row["active_started_at"]) - int(
+            _kb._row_get(row, "approval_wait_seconds") or 0)
         limit = int(row["max_runtime_seconds"])
         if elapsed < limit:
             continue
@@ -903,6 +962,88 @@ def reconcile_orphaned_running(conn: sqlite3.Connection) -> list[str]:
             "(claim_lock=%r, worker_pid=%r)", tid, row["claim_lock"], pid,
         )
     return reconciled
+
+
+# Lanes onde um worker PODE estar legitimamente segurando a claim. ``running`` é
+# o voo normal (as varreduras de reclaim acima o cobrem) e ``waiting_approval``
+# zera a identidade de propósito (``pause_for_approval``), restaurando-a em
+# ``resume_from_pause``. Em QUALQUER outra lane a claim é resíduo: ninguém está
+# em voo, e o CAS de ``_claim_and_open_run`` exige ``claim_lock IS NULL``.
+_CLAIM_IN_FLIGHT_STATUSES = ("running", "waiting_approval")
+
+
+def reconcile_parked_claim_residue(conn: sqlite3.Connection) -> list[str]:
+    """Limpa claim residual em card FORA de voo; devolve os ids destravados.
+
+    Fecha a classe que ``reconcile_orphaned_running`` deixou aberta. Toda
+    varredura de reclaim filtra ``status='running'``
+    (``release_stale_claims``, ``detect_crashed_workers``, ``enforce_max_runtime``,
+    ``detect_stale_running``), e ``_lane_rows`` só enumera
+    ``claim_lock IS NULL``. Logo um card devolvido a ``ready``/``review``/``todo``
+    SEM zerar a claim some do dispatch e não tem quem o limpe: some do board para
+    sempre, sem sensor. Medido no board atlas: 6 cards em ``ready`` com
+    ``claim_lock`` de um pid morto há 3+ dias.
+
+    Zera apenas a escrituração da claim (``claim_lock``/``claim_expires``/
+    ``worker_pid``/``worker_started_at``/``last_heartbeat_at``); o ``status`` NÃO
+    é tocado — o card já está na lane que alguém escolheu, e promover por conta
+    própria seria decidir roteamento. Um pid host-local ainda vivo e com
+    fingerprint casando é deferido (nunca se solta uma claim ao lado de um
+    processo vivo); pid morto, ausente, reciclado ou de outro host é resíduo.
+    """
+    now = int(time.time())
+    released: list[str] = []
+    placeholders = ", ".join("?" for _ in _CLAIM_IN_FLIGHT_STATUSES)
+    rows = conn.execute(
+        "SELECT id, status, claim_lock, claim_expires, worker_pid, worker_started_at "
+        "FROM tasks "
+        f"WHERE status NOT IN ({placeholders}) "
+        "  AND (claim_lock IS NOT NULL OR claim_expires IS NOT NULL "
+        "       OR worker_pid IS NOT NULL)",
+        _CLAIM_IN_FLIGHT_STATUSES,
+    ).fetchall()
+    host_prefix = _kb._host_prefix()
+    for row in rows:
+        tid = row["id"]
+        pid = row["worker_pid"]
+        host_local = str(row["claim_lock"] or "").startswith(host_prefix)
+        if (pid and host_local
+                and _worker_alive(pid, _kb._row_get(row, "worker_started_at"))):
+            # Processo vivo desta máquina: soltar a claim abriria espaço para um
+            # segundo worker ao lado dele. Tenta de novo no próximo tick.
+            _kb._log.debug(
+                "kanban reconcile: task %s (%s) carrega claim residual mas o "
+                "pid %s está vivo neste host — deferindo", tid, row["status"], pid,
+            )
+            continue
+        with _kb.write_txn(conn):
+            cur = conn.execute(
+                "UPDATE tasks SET claim_lock = NULL, claim_expires = NULL, "
+                "worker_pid = NULL, worker_started_at = NULL, "
+                "last_heartbeat_at = NULL "
+                f"WHERE id = ? AND status NOT IN ({placeholders}) "
+                "  AND claim_lock IS ? AND claim_expires IS ? AND worker_pid IS ?",
+                (tid, *_CLAIM_IN_FLIGHT_STATUSES,
+                 row["claim_lock"], row["claim_expires"], pid),
+            )
+            if cur.rowcount != 1:
+                continue
+            payload = {
+                "reason": "parked_claim_residue",
+                "status": row["status"],
+                "claim_lock": row["claim_lock"],
+                "claim_expires": _kb._opt_int(row["claim_expires"]),
+                "worker_pid": _kb._opt_int(pid),
+                "host_local": host_local,
+                "now": now,
+            }
+            _kb._append_event(conn, tid, "reconciled", payload)
+            released.append(tid)
+        _kb._log.info(
+            "kanban reconcile: claim residual limpa em %s (status=%s, "
+            "claim_lock=%r, worker_pid=%r)", tid, row["status"], row["claim_lock"], pid,
+        )
+    return released
 
 
 def _error_fingerprint(error_text: str) -> str:
@@ -1502,16 +1643,22 @@ def check_respawn_guard(
     a re-queue event arrived after it — a deliberate re-run) and ``"active_pr"``
     (PR URL in a recent comment; re-spawning risks a duplicate PR — unless a
     handoff event followed the comment: the named profile must work on that
-    PR). The review lane skips the last two: they are the *inputs* to a review
-    handoff. Stale / dead claim locks are NOT a guard reason — the reclaim
-    passes own those.
+    PR). ``"delivery_closed"`` applies to both lanes: Rel already recorded
+    integrated/verified/installed, so a leftover in review/ready must not take
+    a worker. The review lane still skips recent_success/active_pr: they are
+    the *inputs* to a review handoff. Stale / dead claim locks are NOT a guard
+    reason — the reclaim passes own those
+    (:func:`reconcile_parked_claim_residue` for a card parked outside the
+    running lane).
     """
     row = conn.execute(
-        "SELECT last_failure_error FROM tasks WHERE id = ?",
+        "SELECT last_failure_error, delivery_status FROM tasks WHERE id = ?",
         (task_id,),
     ).fetchone()
     if row is None:
         return None
+    if (row["delivery_status"] or "") in _DELIVERY_CLOSED:
+        return "delivery_closed"
 
     now = int(time.time())
 
@@ -1545,9 +1692,23 @@ def check_respawn_guard(
         # (spaced by the cooldown) until quota returns or a real run supersedes it.
         return None
 
-    # 2. Quota / auth blocker: retrying immediately will not help.
-    err = row["last_failure_error"]
-    if err and _RESPAWN_BLOCKER_RE.search(err):
+    # 2. Quota / auth blocker: retrying immediately will not help.  A plain
+    # crash is different: its persisted error includes the worker's last
+    # captured output, which is context rather than a diagnosis and may contain
+    # benign commands such as ``claude auth status`` (#117097).
+    #
+    # Um run POSTERIOR de natureza terminal (o worker chegou ao fim e transicionou
+    # sozinho) supera o texto: ele descreve uma tentativa que já foi vencida. Sem
+    # este corte, o texto de quota que a requeue de ``rate_limited`` carimba
+    # sobrevive ao próximo run e devolve ``blocker_auth`` para sempre — a proteção
+    # de ``rate_limited`` acima só olha o ``latest_run``, então basta um run de
+    # outra natureza chegar depois para ela evaporar (medido no board atlas:
+    # t_03aac2e3, parqueado desde 22/09 com texto de quota e último run ``blocked``).
+    err = _kb._lossy_text(row["last_failure_error"])
+    latest_outcome = latest_run["outcome"] if latest_run is not None else None
+    if (err
+            and latest_outcome not in _RESPAWN_BLOCKER_SUPERSEDING_OUTCOMES
+            and _RESPAWN_BLOCKER_RE.search(err)):
         return "blocker_auth"
 
     # Review-lane spawns stop here: a recent completed run and a fresh PR URL
@@ -1568,14 +1729,7 @@ def check_respawn_guard(
     ).fetchone()
     if recent_completed:
         completed_at = int(recent_completed["ended_at"] or 0)
-        requeued_after = conn.execute(
-            "SELECT 1 FROM task_events "
-            "WHERE task_id = ? AND created_at >= ? "
-            "AND kind IN ('status', 'promoted', 'unblocked', 'reclaimed') "
-            "LIMIT 1",
-            (task_id, completed_at),
-        ).fetchone()
-        if not requeued_after:
+        if not _requeued_since(conn, task_id, completed_at, extra=("reclaimed",)):
             return "recent_success"
 
     # 4. GitHub PR URL in a recent comment — prior worker already opened a PR.
@@ -1584,26 +1738,64 @@ def check_respawn_guard(
     #    now work on THAT PR — a closer or the implementer finishing it, not a
     #    duplicate implementation (#111910). A crash/reclaim is not a handoff,
     #    so the worker that opened the PR is still not re-spawned against it.
+    #
+    #    A deliberate RE-QUEUE after the PR comment (promote, unblock, a direct
+    #    status write) is the same instruction as in ``recent_success``: the card
+    #    was parked and an operator/the lifecycle sent it back to ``ready``
+    #    KNOWING the PR exists. Without this, ``active_pr`` outranks the operator
+    #    and the card is guarded every tick until the 24h window elapses, with no
+    #    ``ready`` lane progress and nothing on the card saying why. Measured on
+    #    the atlas board: 4 cards, 5h16 with zero spawns, 9.785 respawn_guarded
+    #    events — one of them guarded by a PR that was already CLOSED.
     pr_cutoff = now - _RESPAWN_GUARD_PR_WINDOW
     for c in conn.execute(
         "SELECT body, created_at FROM task_comments "
         "WHERE task_id = ? AND created_at >= ? ORDER BY created_at DESC",
         (task_id, pr_cutoff),
     ).fetchall():
-        if not (c["body"] and _RESPAWN_GUARD_PR_URL_RE.search(c["body"])):
+        body = _kb._lossy_text(c["body"])
+        if not (body and _RESPAWN_GUARD_PR_URL_RE.search(body)):
             continue
+        commented_at = int(c["created_at"] or 0)
         events = conn.execute(
             # Strictly after: a same-second tie stays guarded (fail closed).
             "SELECT kind, payload FROM task_events "
             "WHERE task_id = ? AND created_at > ? "
             "AND kind IN ('assigned', 'changes_requested', 'review_reopened')",
-            (task_id, int(c["created_at"] or 0)),
+            (task_id, commented_at),
         ).fetchall()
         if any(_is_handoff_event(e["kind"], e["payload"]) for e in events):
+            return None
+        if _requeued_since(conn, task_id, commented_at, strict=True):
             return None
         return "active_pr"
 
     return None
+
+
+def _requeued_since(
+    conn: sqlite3.Connection,
+    task_id: str,
+    since: int,
+    *,
+    extra: tuple[str, ...] = (),
+    strict: bool = False,
+) -> bool:
+    """True when a deliberate "run it again" event was recorded since ``since``.
+
+    ``strict`` compares with ``>`` so a same-second tie fails closed (used by the
+    ``active_pr`` branch, matching its handoff query); the ``recent_success``
+    branch keeps its historical ``>=``.
+    """
+    kinds = _REQUEUE_EVENT_KINDS + extra
+    placeholders = ", ".join("?" for _ in kinds)
+    op = ">" if strict else ">="
+    row = conn.execute(
+        f"SELECT 1 FROM task_events WHERE task_id = ? AND created_at {op} ? "
+        f"AND kind IN ({placeholders}) LIMIT 1",
+        (task_id, since, *kinds),
+    ).fetchone()
+    return row is not None
 
 
 def _is_handoff_event(kind: str, payload: Optional[str]) -> bool:
@@ -2135,11 +2327,14 @@ def _run_reclaim_phase(
     board: Optional[str] = None,
 ) -> None:
     """Reclaim stale/orphaned/crashed/timed-out running tasks, then promote."""
+    from hermes_cli.kanban_approval_lifecycle import reconcile_approval_orphans
+    reconcile_approval_orphans(conn)
     reap_worker_zombies()
     result.reaped_terminal_workers = reap_terminal_workers(conn)
     result.reclaimed = _kb.release_stale_claims(conn, failure_limit=failure_limit)
     if reconcile_orphans:
         result.reconciled_orphans = reconcile_orphaned_running(conn)
+        result.released_parked_claims = reconcile_parked_claim_residue(conn)
     result.stale = detect_stale_running(conn, stale_timeout_seconds=stale_timeout_seconds)
     result.crashed = detect_crashed_workers(conn, board=board)
     # Side-channel attributes (see detect_crashed_workers); rate-limited tasks

@@ -1,0 +1,26 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python3
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: not a git repository (or any parent up to mount point /)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+▶ launching test runner
+Discovered 3 test files (~77 tests) under ['tests/hermes_cli/test_kanban_approval_diagnostics.py', 'tests/tui_gateway/test_kanban_notify_poller.py', 'tests/hermes_cli/test_kanban_db.py']; running with -j 28
+[ 15.6% |    12/~77 | ✓12 | ✗ 0] ✓ tests/hermes_cli/test_kanban_approval_diagnostics.py (12✓, 3.8s)
+[ 35.1% |    27/~77 | ✓27 | ✗ 0] ✓ tests/tui_gateway/test_kanban_notify_poller.py (15✓, 5.6s)
+[100.0% |    77/~77 | ✓83 | ✗ 0] ✓ tests/hermes_cli/test_kanban_db.py (56✓ 1s, 6.6s)
+
+=== Summary: 3 files, 83 tests passed, 0 failed, 1 skipped (100% complete) in 6.6s (28 workers) ===
+
+  note: windows_only tests (in 1 file) were SKIPPED on this host (linux); they run on the tests-os CI lane (windows-latest).
+  Durations cached to test_durations.json (3 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   3
+  Total subprocess CPU-wall: 16.0s  (runner wall: 6.6s, parallelism: 28x)
+  P50: 5.59s  P90: 6.63s  P95: 6.63s  P99: 6.63s  Max: 6.63s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+      6.63s  tests/hermes_cli/test_kanban_db.py
+      5.59s  tests/tui_gateway/test_kanban_notify_poller.py
+      3.77s  tests/hermes_cli/test_kanban_approval_diagnostics.py

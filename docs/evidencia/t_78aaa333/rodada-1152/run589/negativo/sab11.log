@@ -1,0 +1,62 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python3
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: detected dubious ownership in repository at '/work'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /work
+▶ launching test runner
+Discovered 1 test files (~49 tests) under ['tests/plugins/test_kanban_dashboard_plugin.py']; running with -j 28
+[100.0% |    49/~49 | ✓47 | ✗ 1] ✗ tests/plugins/test_kanban_dashboard_plugin.py (47✓ 1✗ 1s, 13.0s)
+
+  ╔╍ Failed: tests/plugins/test_kanban_dashboard_plugin.py ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+  ║ /usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+  ║ The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+  ║ 
+  ║   warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+  ║ ..........................F....................s.                        [100%]
+  ║ =============================== warnings summary ===============================
+  ║ ../usr/local/lib/python3.13/site-packages/starlette/testclient.py:45
+  ║   /usr/local/lib/python3.13/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+  ║     _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+  ║ 
+  ║ -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+  ║ =========================== short test summary info ============================
+  ║ FAILED tests/plugins/test_kanban_dashboard_plugin.py::test_waiting_approval_is_not_in_the_status_handler_table
+  ║ 1 failed, 47 passed, 1 skipped, 1 warning in 6.05s
+  ║
+  ║  Repro: python -m pytest tests/plugins/test_kanban_dashboard_plugin.py --tb=no -rf -q
+  ╚╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+
+=== Summary: 1 files, 47 tests passed, 1 failed, 1 skipped (100% complete) in 13.0s (28 workers) ===
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 13.0s  (runner wall: 13.0s, parallelism: 28x)
+  P50: 13.02s  P90: 13.02s  P95: 13.02s  P99: 13.02s  Max: 13.02s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+     13.02s  tests/plugins/test_kanban_dashboard_plugin.py
+
+=== Failure output ===
+
+--- tests/plugins/test_kanban_dashboard_plugin.py ---
+/usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+..........................F....................s.                        [100%]
+=============================== warnings summary ===============================
+../usr/local/lib/python3.13/site-packages/starlette/testclient.py:45
+  /usr/local/lib/python3.13/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/plugins/test_kanban_dashboard_plugin.py::test_waiting_approval_is_not_in_the_status_handler_table
+1 failed, 47 passed, 1 skipped, 1 warning in 6.05s
+
+=== 1 file with test failures (1 test failed) ===
+  tests/plugins/test_kanban_dashboard_plugin.py  (1 test failed)

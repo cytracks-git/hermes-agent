@@ -605,6 +605,47 @@ def test_active_pr_guard_lifts_for_implementer_after_changes_requested(
         assert kbd.check_respawn_guard(conn, done_id) == "recent_success"
 
 
+def test_active_pr_guard_lifts_when_the_card_is_requeued_after_the_pr(
+    kanban_home: Path,
+) -> None:
+    """A deliberate re-queue AFTER the PR comment outranks ``active_pr``.
+
+    ``promote``/``unblock``/a direct status write mean "run this again" from an
+    operator or the lifecycle, which already knows the PR exists — the same
+    instruction ``recent_success`` honours. Measured on the atlas board: 4 ready
+    cards, 5h16 with ZERO spawns and 9.785 ``respawn_guarded`` events, one of
+    them held by a PR that was already CLOSED. Control: a card with the same PR
+    comment and NO re-queue event stays guarded.
+    """
+    pr_comment = "Opened https://github.com/example/repo/pull/44 for review."
+    with kbc.connect() as conn:
+        # Control: PR comment, no re-queue -> still guarded.
+        guarded_id = kb.create_task(conn, title="no requeue", assignee="dev")
+        kb.add_comment(conn, guarded_id, author="dev", body=pr_comment)
+        assert kbd.check_respawn_guard(conn, guarded_id) == "active_pr"
+
+        # unblock after the PR comment lifts the guard.
+        unblocked_id = kb.create_task(conn, title="unblocked", assignee="dev")
+        kb.add_comment(conn, unblocked_id, author="dev", body=pr_comment)
+        _backdate_comments(conn, unblocked_id)
+        kb.claim_task(conn, unblocked_id)
+        assert kb.block_task(conn, unblocked_id, reason="waiting on H1") is True
+        assert kb.unblock_task(conn, unblocked_id) is True
+        assert kbd.check_respawn_guard(conn, unblocked_id) is None
+
+        # promote (todo -> ready) after the PR comment lifts it too.
+        promoted_id = kb.create_task(conn, title="promoted", assignee="dev")
+        kb.add_comment(conn, promoted_id, author="dev", body=pr_comment)
+        _backdate_comments(conn, promoted_id)
+        with kb.write_txn(conn):
+            conn.execute(
+                "UPDATE tasks SET status = 'todo' WHERE id = ?", (promoted_id,)
+            )
+        ok, why = kb.promote_task(conn, promoted_id, actor="h1")
+        assert (ok, why) == (True, None)
+        assert kbd.check_respawn_guard(conn, promoted_id) is None
+
+
 def test_dispatch_json_exposes_suppression_reasons(
     kanban_home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -923,6 +964,37 @@ def test_review_handoff_without_live_run_attributes_run_to_implementer(kanban_ho
         assert _events(conn, tid, kind="review_requested")[0][1]["implementer"] == "worker"
 
 
+def test_review_handoff_of_card_assigned_to_its_reviewer_records_no_implementer(
+    kanban_home: Path,
+) -> None:
+    """A card created already assigned to its reviewer has no implementer to
+    record. Stamping the assignee made the payload read
+    ``implementer == reviewer``, and ``request_changes`` routes on that field —
+    so a rejection went back to the profile that wrote the findings. With no
+    live run and nothing but the reviewer on the row, the honest provenance is
+    *none*, and the rejection must refuse rather than misroute."""
+    with kbc.connect() as conn:
+        tid = kb.create_task(conn, title="already applied", assignee="reviewer-a")
+        assert kb.request_review(
+            conn, tid, summary="review this", reviewer="reviewer-a",
+        ) is True
+
+        ev = _events(conn, tid, kind="review_requested")[0][1]
+        assert ev["reviewer"] == "reviewer-a"
+        assert ev["implementer"] is None
+        run = conn.execute(
+            "SELECT profile, outcome FROM task_runs WHERE task_id = ? "
+            "ORDER BY id DESC LIMIT 1", (tid,),
+        ).fetchone()
+        assert (run["outcome"], run["profile"]) == ("review_requested", None)
+
+        claimed = kb.claim_review_task(conn, tid, claimer="reviewer-a")
+        assert claimed is not None
+        ok, reason = kb.request_changes(conn, tid, reason="found 3 issues")
+        assert ok is False
+        assert "implementer provenance" in (reason or "")
+
+
 def test_synthesized_run_for_unassigned_card_keeps_null_profile(kanban_home: Path) -> None:
     """A transition that does not name an actor still reads the card: an
     unassigned card's synthesized run carries ``profile=NULL`` (the actor
@@ -934,3 +1006,62 @@ def test_synthesized_run_for_unassigned_card_keeps_null_profile(kanban_home: Pat
             "SELECT profile, outcome FROM task_runs WHERE task_id = ? ORDER BY id DESC LIMIT 1", (tid,),
         ).fetchone()
         assert (run["outcome"], run["profile"]) == ("blocked", None)
+
+
+def test_delivery_closed_skips_review_spawn_and_still_spawns_open_review(
+    kanban_home: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review leftover with delivery already integrated must not take a worker.
+
+    Negative: sabotaging delivery_status back to NULL makes the same card
+    spawnable again — the guard is the delivery column, not review itself.
+    """
+    import hermes_cli.config as cfgmod
+    import hermes_cli.profiles as profmod
+
+    monkeypatch.setattr(profmod, "profile_exists", lambda name: True)
+    monkeypatch.setattr(
+        cfgmod, "load_config",
+        lambda *a, **k: {"kanban": {"review_dispatch": True}},
+    )
+
+    with kbc.connect() as conn:
+        closed_id = kb.create_task(conn, title="already integrated", assignee="reviewer")
+        claimed = kb.claim_task(conn, closed_id)
+        assert claimed is not None
+        assert kb.request_review(
+            conn, closed_id, summary="PR merged",
+            expected_run_id=claimed.current_run_id,
+        )
+        with kb.write_txn(conn):
+            conn.execute(
+                "UPDATE tasks SET delivery_status='integrated' WHERE id=?",
+                (closed_id,),
+            )
+
+        open_id = kb.create_task(conn, title="needs review", assignee="reviewer")
+        claimed_open = kb.claim_task(conn, open_id)
+        assert claimed_open is not None
+        assert kb.request_review(
+            conn, open_id, summary="please review",
+            expected_run_id=claimed_open.current_run_id,
+        )
+
+        assert kbd.check_respawn_guard(conn, closed_id, lane="review") == "delivery_closed"
+        assert kbd.check_respawn_guard(conn, open_id, lane="review") is None
+
+        res = kbd.dispatch_once(conn, dry_run=True)
+        spawned_ids = [s[0] for s in res.spawned]
+        guarded = dict(res.respawn_guarded)
+        assert closed_id not in spawned_ids
+        assert open_id in spawned_ids
+        assert guarded.get(closed_id) == "delivery_closed"
+
+        with kb.write_txn(conn):
+            conn.execute(
+                "UPDATE tasks SET delivery_status=NULL WHERE id=?",
+                (closed_id,),
+            )
+        assert kbd.check_respawn_guard(conn, closed_id, lane="review") is None
+        res2 = kbd.dispatch_once(conn, dry_run=True)
+        assert closed_id in [s[0] for s in res2.spawned]

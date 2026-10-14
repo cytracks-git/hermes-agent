@@ -36,3 +36,26 @@ def test_crashed_and_timed_out_say_retry_and_hide_internals():
         assert "retried automatically" in msg
         assert "pid" not in msg and "max_runtime" not in msg
     assert "30-minute" in timed_out
+
+
+def test_persisted_file_approval_notifies_without_waking_a_model(tmp_path):
+    import json
+    from contextlib import closing
+    from hermes_cli import kanban_db as kb
+    from hermes_cli.kanban_db_connect import connect
+    from gateway.kanban_watchers_notifier import TERMINAL_KINDS, _WAKE_KINDS
+
+    with closing(connect(kb.init_db(db_path=tmp_path / "board.db"))) as conn:
+        tid = kb.create_task(conn, title="Notification fixture", assignee="fixture")
+        kb.recompute_ready(conn)
+        task = kb.claim_task(conn, tid)
+        assert kb.pause_for_approval(conn, tid, request_id="fixture-request", request_hash="f" * 64,
+                                     expected_run_id=task.current_run_id, targets=["AGENTS.md"])
+        row = conn.execute("SELECT kind,payload FROM task_events WHERE task_id=? ORDER BY id DESC LIMIT 1", (tid,)).fetchone()
+        assert row["kind"] in TERMINAL_KINDS
+        assert row["kind"] not in _WAKE_KINDS
+        message, wake, _ = _EVENT_FORMATTERS[row["kind"]](
+            _event(**json.loads(row["payload"])), _names(tid))
+        assert "fixture-request" in message and tid in message
+        assert "approve once" in message and "Comments do not authorize" in message
+        assert wake is None

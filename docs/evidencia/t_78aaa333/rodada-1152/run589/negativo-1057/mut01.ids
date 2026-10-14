@@ -1,0 +1,1 @@
+tests/hermes_cli/test_kanban_approval_diagnostics.py::test_each_material_change_produces_exactly_one_new_observation

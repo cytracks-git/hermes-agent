@@ -1,0 +1,32 @@
+=== INVENTARIO DE ATIVIDADE ANTES  2026-09-21T01:40:35Z  (recencia=120min)
+--- [ATINGIDO] Hermes.app e o backend serve que ele hospeda
+56897     1 Sun Sep 20 21:01:46 2026     /Users/farantes/.hermes/hermes-agent/apps/desktop/release/mac-arm64/Hermes.app/
+56920 56897 Sun Sep 20 21:01:48 2026     /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main --profile default serve --h
+--- [ATINGIDO] sessoes ABERTAS com mensagem nos ultimos 120min
+20260920_164003_9511e3 | src=desktop | msgs=60 | ult=2026-09-20 22:39:48 | Otimizar skills, agents
+20260920_041002_636708 | src=desktop | msgs=109 | ult=2026-09-20 22:35:59 | Atlas #895 · Homologar SDD v5 0.2 com Kanb
+--- [ATINGIDO] turno em voo? (ultima mensagem da sessao e do usuario = agente respondendo)
+20260920_041002_636708 -> ultimo papel=assistant
+20260920_164003_9511e3 -> ultimo papel=assistant
+--- [ATINGIDO] o backend serve se declara ocupado?
+porta=59760
+"active_agents":0
+"gateway_busy":false
+"gateway_drainable":true
+"active_sessions":1
+--- [PRESERVADO] gateway (processo proprio; sobrevive ao app por desenho)
+78235 Sun Sep 20 21:51:52 2026     /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.stderr_timestamp -
+78236 Sun Sep 20 21:51:52 2026     /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main gateway run -
+--- [PRESERVADO] workers do Kanban (spawn do dispatcher, ppid=1; nao sao filhos do app)
+card t_a4c2bfbd status=ready assignee=executor pid=0 run=0
+card t_78aaa333 status=running assignee=arquiteto pid=98991 run=582
+card t_f4d1c062 status=running assignee=executor pid=2520 run=583
+run aberta 582 task=t_78aaa333 pid=98991
+run aberta 583 task=t_f4d1c062 pid=2520
+--- [PRESERVADO] cron: jobs ativos por perfil servido (o ticker vive no gateway)
+perfil default: 7 job(s) ativo(s)
+perfil arquiteto: 0 job(s) ativo(s)
+perfil executor: 1 job(s) ativo(s)
+perfil pesquisa: 0 job(s) ativo(s)
+perfil revisor: 0 job(s) ativo(s)
+=== FIM INVENTARIO ANTES

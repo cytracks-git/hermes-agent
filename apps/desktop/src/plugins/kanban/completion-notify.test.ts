@@ -80,6 +80,18 @@ beforeEach(() => {
 })
 
 describe('authoritative baseline', () => {
+  it('notifies an approval request once without posting a decision', async () => {
+    const rest = makeRest(() => 0)
+    const m = await loadModule()
+    m.bindCompletionNotify(rest as never)
+    const request = ev(1, 'approval_requested', { request_id: 'fixture-request' })
+    expect(await m.onKanbanEventsFrame('fixture', [request])).toBe(true)
+    expect(lastNotify().message).toContain('fixture-request')
+    expect(await m.onKanbanEventsFrame('fixture', [request])).toBe(false)
+    expect(hostMock.notify).toHaveBeenCalledTimes(1)
+    expect(rest).toHaveBeenCalledTimes(1)
+  })
+
   it('baselines from GET /board latest_event_id and suppresses replay history', async () => {
     const rest = makeRest(() => 100)
     const m = await loadModule()

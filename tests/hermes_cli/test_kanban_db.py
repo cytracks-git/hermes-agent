@@ -472,6 +472,88 @@ def test_respawn_guard_defers_rate_limited_within_cooldown(
         assert kbd.check_respawn_guard(conn, tid) is None
 
 
+@pytest.mark.parametrize(
+    "error_text, expected",
+    [
+        # Worker progress prose talking about *writing*, not an auth failure
+        # (#117009): must NOT trip the guard.
+        ("Workstream C items C-3 and C-4: author t  (90.59s)", None),
+        ("docs authored by the previous cycle", None),
+        ("relying on an authoritative source", None),
+        # Genuine auth failures must still trip the guard, one row per
+        # curated stem family (bare, -ate, -ize, -ise).
+        ("401 auth failed", "blocker_auth"),
+        ("authentication error from provider", "blocker_auth"),
+        ("still authorizing the request", "blocker_auth"),
+        ("still authorising the request", "blocker_auth"),
+    ],
+)
+def test_respawn_guard_blocker_auth_curated_not_open_stem(
+    kanban_home, monkeypatch, error_text, expected,
+):
+    """``_RESPAWN_BLOCKER_RE`` used to use an open ``auth\\w*`` stem that matched
+    ordinary English words like "author"/"authored"/"authoring"/"authoritative"
+    in worker progress prose, parking a healthy ``ready`` card forever (#117009).
+    The auth family must be a curated set of real auth-failure tokens."""
+    monkeypatch.setenv("HERMES_KANBAN_RATE_LIMIT_COOLDOWN_SECONDS", "0")
+
+    with kbc.connect() as conn:
+        tid = kb.create_task(conn, title="prose", assignee="a")
+        conn.execute(
+            "UPDATE tasks SET last_failure_error=? WHERE id=?",
+            (error_text, tid),
+        )
+        conn.commit()
+        assert kbd.check_respawn_guard(conn, tid) == expected
+
+
+def test_respawn_guard_ignores_auth_words_in_crashed_worker_output(kanban_home):
+    """A plain crash's captured stdout is context, not a diagnosis.
+
+    ``_classify_dead_worker`` appends the worker's last output to the persisted
+    failure text.  A benign command such as ``claude auth status`` must not turn
+    an unrelated crash into a permanent auth guard on the next dispatch.
+    """
+    with kbc.connect() as conn:
+        crashed_id = kb.create_task(conn, title="crashed", assignee="a")
+        kb.claim_task(conn, crashed_id)
+        crashed_run_id = kb.get_task(conn, crashed_id).current_run_id
+        conn.execute(
+            "UPDATE task_runs SET outcome='crashed', status='failed', ended_at=? "
+            "WHERE id=?",
+            (5_000_000, crashed_run_id),
+        )
+        conn.execute(
+            "UPDATE tasks SET status='ready', current_run_id=NULL, "
+            "claim_lock=NULL, claim_expires=NULL, worker_pid=NULL, "
+            "last_failure_error=? WHERE id=?",
+            (
+                "pid 1 killed by signal 9. Worker's last output: "
+                "'env -u ANTHROPIC_API_KEY claude auth status --text'",
+                crashed_id,
+            ),
+        )
+
+        spawn_failed_id = kb.create_task(conn, title="spawn failed", assignee="a")
+        kb.claim_task(conn, spawn_failed_id)
+        spawn_run_id = kb.get_task(conn, spawn_failed_id).current_run_id
+        conn.execute(
+            "UPDATE task_runs SET outcome='spawn_failed', status='failed', ended_at=? "
+            "WHERE id=?",
+            (5_000_000, spawn_run_id),
+        )
+        conn.execute(
+            "UPDATE tasks SET status='ready', current_run_id=NULL, "
+            "claim_lock=NULL, claim_expires=NULL, worker_pid=NULL, "
+            "last_failure_error=? WHERE id=?",
+            ("provider authentication failed", spawn_failed_id),
+        )
+        conn.commit()
+
+        assert kbd.check_respawn_guard(conn, crashed_id) is None
+        assert kbd.check_respawn_guard(conn, spawn_failed_id) == "blocker_auth"
+
+
 def test_infrastructure_spawn_refusal_never_charges_the_card(
     kanban_home, monkeypatch, all_assignees_spawnable,
 ):
@@ -1504,6 +1586,68 @@ def test_connect_heals_reduced_tasks_schema_seeded_by_external_harness(kanban_ho
         assert kb.list_tasks(conn) == []
     finally:
         conn.close()
+
+
+def test_a_rebuilt_legacy_board_ends_up_with_the_same_schema_as_a_fresh_one(kanban_home):
+    """O banco reconstruido tem de ficar IGUAL ao novo -- indices inclusive.
+
+    Tres comentarios em ``kanban_db_connect.py`` ja citavam este teste pelo
+    nome (``test_rebuilt_schema_matches_fresh``) como o guardiao de
+    ``_REBUILD_SPECS`` contra deriva do ``SCHEMA_SQL``. Ele nao existia em
+    lugar nenhum da suite: a promessa estava no comentario, a cobertura nao.
+    Isso importa porque ``DROP TABLE`` leva os indices junto, entao um indice
+    novo no ``SCHEMA_SQL`` que nao seja repetido no ``_REBUILD_SPECS`` some
+    calado em qualquer board legado reconstruido -- e o efeito e perda de
+    desempenho silenciosa, que ninguem ve ate o board crescer.
+
+    Contrato entre duas pecas de dados (schema novo x schema reconstruido),
+    nao retrato: um indice novo entra aqui sozinho, sem editar o teste.
+    """
+    db_path = kanban_home / "legado.db"
+    seed = sqlite3.connect(db_path)
+    # Forma legada: ``id`` TEXT, o gatilho de ``_table_has_drifted``.
+    seed.execute(
+        "CREATE TABLE task_events (id TEXT PRIMARY KEY, task_id TEXT NOT NULL,"
+        " run_id INTEGER, kind TEXT NOT NULL, payload TEXT,"
+        " created_at INTEGER NOT NULL)"
+    )
+    seed.commit()
+    seed.close()
+
+    conn = kbc.connect(db_path)
+    try:
+        assert not kbc._table_has_drifted(conn, "task_events"), "a reconstrucao nao rodou"
+        reconstruido = {
+            r["name"]: r["sql"] for r in conn.execute(
+                "SELECT name, sql FROM sqlite_master"
+                " WHERE type = 'index' AND tbl_name = 'task_events'"
+                "   AND sql IS NOT NULL")
+        }
+    finally:
+        conn.close()
+
+    fresh = sqlite3.connect(":memory:")
+    fresh.row_factory = sqlite3.Row
+    fresh.executescript(kb.SCHEMA_SQL)
+    novo = {
+        r["name"]: r["sql"] for r in fresh.execute(
+            "SELECT name, sql FROM sqlite_master"
+            " WHERE type = 'index' AND tbl_name = 'task_events'"
+            "   AND sql IS NOT NULL")
+    }
+    fresh.close()
+
+    faltando = set(novo) - set(reconstruido)
+    assert not faltando, (
+        f"indices perdidos na reconstrucao: {sorted(faltando)} -- todo CREATE INDEX"
+        " do SCHEMA_SQL precisa estar tambem em _REBUILD_SPECS['task_events']")
+
+    def _normalizar(sql: str) -> str:
+        return " ".join(sql.replace("IF NOT EXISTS ", "").split()).lower()
+
+    assert ({n: _normalizar(s) for n, s in reconstruido.items() if n in novo}
+            == {n: _normalizar(s) for n, s in novo.items()}), \
+        "indice reconstruido com colunas diferentes das do schema novo"
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,47 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:37:20). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/work/apps/desktop[39m
+
+ [31m❯[39m [30m[45m ui [49m[39m src/plugins/kanban/approval-panel.test.tsx [2m([22m[2m5 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 145[2mms[22m[39m
+   [32m✓[39m one explicit gesture authorizes only the displayed content[32m 96[2mms[22m[39m
+   [32m✓[39m does not offer a decision while content is unavailable[32m 9[2mms[22m[39m
+[31m   [31m×[31m names the wait reason, the next action, and never invents a resource cost[39m[32m 14[2mms[22m[39m
+   [32m✓[39m offers Retry notice only when the delivery budget is exhausted, and it decides nothing[32m 16[2mms[22m[39m
+   [32m✓[39m stays silent about diagnostics when the backend does not send them[32m 9[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m [30m[45m ui [49m[39m src/plugins/kanban/approval-panel.test.tsx[2m > [22mnames the wait reason, the next action, and never invents a resource cost
+[31m[1mAssertionError[22m: expected <button …(4)></button> to be null[39m
+
+[32m- Expected:[39m
+null
+
+[31m+ Received:[39m
+<button
+  class="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-[2.5px] font-medium whitespace-nowrap transition-all duration-100 outline-none focus-visible:border-ring focus-visible:ring-[0.1875rem] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-default disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 bg-transparent text-(--ui-text-primary) shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--ui-stroke-secondary)_50%,transparent)] hover:bg-(--chrome-action-hover) hover:text-(--ui-text-primary) gap-1 px-2 py-0.5 text-[0.6875rem] leading-4 has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3"
+  data-size="xs"
+  data-slot="button"
+  data-variant="outline"
+>
+  Retry notice
+</button>
+
+[36m [2m❯[22m src/plugins/kanban/approval-panel.test.tsx:[2m101:68[22m[39m
+    [90m 99|[39m     [34mexpect[39m(list[33m.[39mtextContent)[33m.[39mnot[33m.[39m[34mtoContain[39m([32m'read'[39m)
+    [90m100|[39m     [90m// Entrega saudável não oferece retry.[39m
+    [90m101|[39m     expect(screen.queryByRole('button', { name: 'Retry notice' })).toB…
+    [90m   |[39m                                                                    [31m^[39m
+    [90m102|[39m   } [35mfinally[39m {
+    [90m103|[39m     [34mcleanup[39m()
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m4 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 22:31:45
+[2m   Duration [22m 5.28s[2m (transform 3.73s, setup 64ms, import 4.66s, tests 145ms, environment 261ms)[22m
+

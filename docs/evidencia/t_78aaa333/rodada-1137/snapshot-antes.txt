@@ -1,0 +1,26 @@
+=== SNAPSHOT DESKTOP ANTES  2026-09-21T01:35:15Z
+--- instalacao
+643ffa7a82c0e2b8491bee7d31f2495242fb3075
+643ffa7a82c fix(t_78aaa333): leitura de diagnostico por request, nao por janela global (1059)
+--- app.asar (bytes, nao fonte)
+tamanho=9022980  mtime=Sep 19 13:31
+sha256=fdf08b0ec1bea0f46b39d5abd7c388b5b57ff03d88571c9b4e14f7cae4f5680f
+marcador waiting_approval=0
+marcador retryApprovalNotice=0
+marcador notice-retry=0
+--- app.asar.unpacked/dist (o dist real que o renderer carrega)
+arquivos=421
+marcador waiting_approval=0 arquivo(s)
+--- build stamp (perfil default: e onde o Desktop do operador roda)
+{
+  "contentHash": "2ca969b1c494ad4626408ba523e1fd51d105e4672b0356eb15bdf3d0a4fd7c9c",
+  "sourceMode": false,
+  "builtAt": "2026-09-17T05:06:39.914713+00:00"
+}
+--- processos do Desktop (pid + lstart: idade e o que separa bundle novo de velho)
+56897 Sun Sep 20 21:01:46 2026     /Users/farantes/.hermes/hermes-agent/apps/desktop/release/mac-arm64/Hermes.app/Contents/MacOS/Hermes
+--- backend serve (filho do app)
+56920 56897 Sun Sep 20 21:01:48 2026     /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main --profile default serve --host 127.0.0.1 --port
+--- gateway (processo separado; nao deve mudar nesta janela)
+pid=78236 gateway_state=running code_sha=643ffa7a82c0e2b8491bee7d31f2495242fb3075 code_version=0.21.3
+=== FIM DESKTOP ANTES

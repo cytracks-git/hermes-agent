@@ -736,6 +736,59 @@ def _rule_stranded_in_ready(task, events, runs, now, cfg) -> list[Diagnostic]:
     )]
 
 
+def _rule_parked_claim_residue(task, events, runs, now, cfg) -> list[Diagnostic]:
+    """Card FORA da lane ``running`` carregando ``claim_lock``/``worker_pid``.
+
+    O dispatcher só enumera candidatos com ``claim_lock IS NULL``
+    (``kanban_db_dispatch._lane_rows``) e TODA varredura de reclaim filtra
+    ``status='running'``. Um card devolvido a ``ready``/``review``/``todo`` sem
+    zerar a claim some do board sem ruído nenhum — inclusive de
+    ``stranded_in_ready``, que trata claim preenchida como "alguém trabalhando"
+    e retorna cedo. Este é o sensor que faltava para essa classe.
+
+    ``waiting_approval`` fica de fora (a identidade é zerada em
+    ``pause_for_approval`` e restaurada em ``resume_from_pause``, então lá uma
+    claim preenchida é o estado legítimo de quem voltou).
+    """
+    status = _task_field(task, "status")
+    if status in ("running", "waiting_approval", "done", "archived"):
+        return []
+    claim_lock = _task_field(task, "claim_lock")
+    worker_pid = _task_field(task, "worker_pid")
+    if not claim_lock and not worker_pid:
+        return []
+
+    task_id = _task_field(task, "id")
+    actions: list[DiagnosticAction] = [
+        DiagnosticAction(
+            kind="reclaim", label="Release the residual claim",
+            payload={"task_id": task_id, "claim_lock": claim_lock},
+            suggested=True,
+        ),
+    ]
+    if task_id:
+        cmd = f"hermes kanban events {task_id}"
+        actions.append(_cli_hint(f"Inspect the claim history: {cmd}", cmd))
+    # A dispatcher tick reconciles this automatically; still error-level because
+    # until one runs the card takes no worker at all.
+    last_seen = int(_task_field(task, "created_at", default=0) or 0)
+    return [Diagnostic(
+        kind="parked_claim_residue", severity="error",
+        title=f"Claim lock left on a {status!r} card",
+        detail=f"This task is {status!r} but still carries claim bookkeeping "
+               f"(claim_lock={claim_lock!r}, worker_pid={worker_pid!r}). The dispatcher only "
+               f"considers rows with claim_lock IS NULL, and every reclaim pass filters "
+               f"status='running', so nothing will ever pick it up or clean it. A dispatcher "
+               f"tick releases it automatically once reconciliation runs; if it persists, the "
+               f"reconciliation pass is disabled (kanban.reconcile_orphans) or a live worker "
+               f"still owns the PID.",
+        actions=actions,
+        first_seen_at=last_seen, last_seen_at=last_seen, count=1,
+        data={"status": status, "claim_lock": claim_lock,
+              "worker_pid": int(worker_pid) if worker_pid else None},
+    )]
+
+
 # Order matters: earlier rules render first on severity ties.
 _RULES: list[RuleFn] = [
     _rule_hallucinated_cards,
@@ -748,6 +801,7 @@ _RULES: list[RuleFn] = [
     _rule_stuck_in_blocked,
     _rule_block_unblock_cycling,
     _rule_stranded_in_ready,
+    _rule_parked_claim_residue,
 ]
 
 

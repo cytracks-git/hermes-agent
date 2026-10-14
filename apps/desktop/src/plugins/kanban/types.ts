@@ -30,7 +30,41 @@ export interface KanbanColumn {
   tasks: KanbanTask[]
 }
 
+/** Projeção de diagnóstico (kanban_approval_diagnostics.project). Derivada, ao
+ *  lado do registro imutável: não faz parte do que o humano aprova. Opcional
+ *  porque um backend anterior a t_78aaa333 não envia o campo — a UI então
+ *  esconde a seção em vez de inventar "OK". */
+export interface ApprovalDiagnostics {
+  phase: string
+  phase_label: string
+  reason: string
+  next_action: string
+  last_transition_at: number
+  last_evidence_at: number | null
+  /** Sempre null hoje: custo de CPU/E-S da espera NÃO é medido em produção.
+   *  A UI mostra "Unavailable"; zero seria mentira. */
+  resource_cost: number | null
+  delivery_status: string
+  delivery_label: string
+  delivery_attempts: number
+  delivery_generation: string | null
+}
+
+export interface KanbanApproval {
+  request_id: string
+  request_hash: string
+  state: string
+  profile_home: string
+  run_id: number
+  decided_by: string | null
+  decided_at: number | null
+  applied_at: number | null
+  payload_json: string
+  diagnostics?: ApprovalDiagnostics | null
+}
+
 export interface KanbanBoard {
+  pending_approvals?: number
   columns: KanbanColumn[]
   tenants: string[]
   assignees: string[]
@@ -220,6 +254,7 @@ export const COLUMN_META: Record<string, { codicon: string; tone: string }> = {
   scheduled: { codicon: 'watch', tone: '#a78bfa' },
   ready: { codicon: 'play-circle', tone: '#60a5fa' },
   running: { codicon: 'sync', tone: '#34d399' },
+  waiting_approval: { codicon: 'shield', tone: '#fbbf24' },
   blocked: { codicon: 'error', tone: '#f87171' },
   review: { codicon: 'eye', tone: '#fbbf24' },
   done: { codicon: 'pass', tone: 'var(--ui-text-tertiary)' },

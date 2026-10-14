@@ -1,0 +1,4 @@
+tests/tools/test_file_approval_worker.py
+tests/hermes_cli/test_kanban_approval_wait.py
+tests/plugins/test_kanban_file_approval_api.py
+tests/tui_gateway/test_kanban_notify_poller.py
