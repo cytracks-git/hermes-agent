@@ -1,6 +1,34 @@
 """Background processes share the classic CLI live-work dock with subagents (Processes block)."""
 import time
+import pytest
 from types import SimpleNamespace
+
+
+@pytest.mark.parametrize("chunks, expected", [
+    (["bash: cannot set terminal process group (1)\n",
+      "bash: no job control in this shell\n"], "starting"),
+    (["payload\n"], "last: payload"),
+    (["payload\n", "bash: no job control in this shell\n"],
+     "last: bash: no job control in this shell"),
+])
+def test_dock_com_avisos_iniciais_em_chunks(monkeypatch, chunks, expected):
+    """Avisos em leituras separadas não viram atividade; payload real permanece."""
+    from unittest.mock import Mock
+    from hermes_cli.cli_process_dock import _last_output_line, process_activity
+    from tools.process_registry import ProcessRegistry, ProcessSession
+
+    registry = ProcessRegistry()
+    stdout = Mock(spec=["read"])
+    stdout.read.side_effect = [*chunks, ""]
+    proc = Mock(stdout=stdout, returncode=0)
+    proc.wait.return_value = 0
+    session = ProcessSession(id="proc_dock_chunks", command="sleep 30", process=proc)
+    # Unidade isolada: não persistir resultado fictício nem iniciar processo real.
+    monkeypatch.setattr(registry, "_finish_exited", lambda *_: None)
+    registry._reader_loop(session)
+    row = {"status": "running", "elapsed": 0,
+           "detail": _last_output_line(session.output_buffer)}
+    assert process_activity(row) == "0s · " + expected
 
 from prompt_toolkit.utils import get_cwidth
 

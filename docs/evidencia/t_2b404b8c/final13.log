@@ -1,0 +1,28 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: detected dubious ownership in repository at '/work'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /work
+▶ launching test runner
+Discovered 4 test files (~123 tests) under ['tests/agent/lsp/test_client_e2e.py', 'tests/scripts/test_check_no_tmp_literals.py', 'tests/hermes_cli/test_kanban_corpo_comprimido.py', 'tests/agent/test_bedrock_adapter.py']; running with -j 28
+[ 72.4% |    89/~123 | ✓89 | ✗ 0] ✓ tests/agent/test_bedrock_adapter.py (89✓, 2.4s)
+[ 83.7% |   103/~123 | ✓109 | ✗  0] ✓ tests/hermes_cli/test_kanban_corpo_comprimido.py (20✓, 3.5s)
+[ 92.7% |   114/~123 | ✓121 | ✗  0] ✓ tests/agent/lsp/test_client_e2e.py (12✓, 4.9s)
+[100.0% |   123/~123 | ✓146 | ✗  0] ✓ tests/scripts/test_check_no_tmp_literals.py (25✓, 20.6s)
+
+=== Summary: 4 files, 146 tests passed, 0 failed (100% complete) in 20.7s (28 workers) ===
+  Durations cached to test_durations.json (4 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   4
+  Total subprocess CPU-wall: 31.4s  (runner wall: 20.7s, parallelism: 28x)
+  P50: 4.86s  P90: 20.64s  P95: 20.64s  P99: 20.64s  Max: 20.64s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+     20.64s  tests/scripts/test_check_no_tmp_literals.py
+      4.86s  tests/agent/lsp/test_client_e2e.py
+      3.46s  tests/hermes_cli/test_kanban_corpo_comprimido.py
+      2.44s  tests/agent/test_bedrock_adapter.py

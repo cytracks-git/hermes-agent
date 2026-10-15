@@ -28,6 +28,10 @@ from typing import Any, Iterable, Optional
 
 from toolsets import get_toolset_names
 
+# Reexportado: a fronteira de admissão de corpo é parte da API pública deste
+# módulo (o REST do dashboard grava via UPDATE direto, sem passar por edit_task).
+from hermes_cli.kanban_task_body import validate_comment_body, validate_task_body  # noqa: F401
+
 _log = logging.getLogger(__name__)
 
 
@@ -1318,7 +1322,9 @@ def create_task(
     """
     from hermes_cli.kanban_db_graph import initial_task_state, inherit_creator_origin
     from hermes_cli.kanban_pr_acceptance import validate_contract
+    from hermes_cli.kanban_task_body import validate_task_body
 
+    validate_task_body(body)
     completion_contract = validate_contract(completion_contract)
     model_override, provider_override = _validate_model_override(model_override, provider_override)
     reasoning_effort = normalize_reasoning_effort(reasoning_effort)
@@ -1801,10 +1807,13 @@ def task_graph_context(conn: sqlite3.Connection, task_id: str) -> dict:
 # --- Comments & events ---
 
 def add_comment(conn: sqlite3.Connection, task_id: str, author: str, body: str) -> int:
+    from hermes_cli.kanban_task_body import validate_comment_body
+
     if not body or not body.strip():
         raise ValueError("comment body is required")
     if not author or not author.strip():
         raise ValueError("comment author is required")
+    validate_comment_body(body)
     now = int(time.time())
     # ``allow_nested=True``: graph builders (kanban_swarm blackboard seeding)
     # compose comment writes under one outer commit.
@@ -3122,6 +3131,9 @@ def edit_task(
     metadata: Optional[dict] = None, board: Optional[str] = None,
 ) -> bool:
     """Edit task fields, optionally backfilling a completed task's result."""
+    from hermes_cli.kanban_task_body import validate_task_body
+
+    validate_task_body(body)
     changed_fields = [
         field for field, value in (("title", title), ("body", body), ("priority", priority))
         if value is not None
@@ -3822,6 +3834,9 @@ def specify_triage_task(
     """
     if title is not None and not title.strip():
         raise ValueError("title cannot be blank")
+    from hermes_cli.kanban_task_body import validate_task_body
+
+    validate_task_body(body)
     assignee = _canonical_assignee(assignee)
     with write_txn(conn):
         existing = conn.execute(

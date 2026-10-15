@@ -1,0 +1,32 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: detected dubious ownership in repository at '/work'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /work
+▶ launching test runner
+Discovered 6 test files (~117 tests) under ['tests/hermes_cli/test_config_read_guard.py', 'tests/hermes_cli/test_kanban_route_preflight.py', 'tests/hermes_cli/test_kanban_route_preflight_dispatch.py', 'tests/hermes_cli/test_kanban_shared_quota_dispatch.py', 'tests/hermes_cli/test_process_dock.py', 'tests/agent/test_bedrock_adapter.py']; running with -j 28
+[ 13.7% |    16/~117 | ✓18 | ✗ 0] ✓ tests/hermes_cli/test_kanban_route_preflight.py (18✓, 1.6s)
+[ 16.2% |    19/~117 | ✓23 | ✗ 0] ✓ tests/hermes_cli/test_process_dock.py (5✓, 2.1s)
+[ 92.3% |   108/~117 | ✓112 | ✗  0] ✓ tests/agent/test_bedrock_adapter.py (89✓, 2.1s)
+[ 94.0% |   110/~117 | ✓114 | ✗  0] ✓ tests/hermes_cli/test_kanban_route_preflight_dispatch.py (2✓, 2.6s)
+[ 98.3% |   115/~117 | ✓119 | ✗  0] ✓ tests/hermes_cli/test_kanban_shared_quota_dispatch.py (5✓, 3.2s)
+[100.0% |   117/~117 | ✓121 | ✗  0] ✓ tests/hermes_cli/test_config_read_guard.py (2✓, 3.6s)
+
+=== Summary: 6 files, 121 tests passed, 0 failed (100% complete) in 3.6s (28 workers) ===
+  Durations cached to test_durations.json (6 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   6
+  Total subprocess CPU-wall: 15.2s  (runner wall: 3.6s, parallelism: 28x)
+  P50: 2.64s  P90: 3.60s  P95: 3.60s  P99: 3.60s  Max: 3.60s
+  <1s: 0 files (0%)  <2s: 1 files (17%)
+  Top 10 slowest:
+      3.60s  tests/hermes_cli/test_config_read_guard.py
+      3.19s  tests/hermes_cli/test_kanban_shared_quota_dispatch.py
+      2.64s  tests/hermes_cli/test_kanban_route_preflight_dispatch.py
+      2.12s  tests/agent/test_bedrock_adapter.py
+      2.11s  tests/hermes_cli/test_process_dock.py
+      1.57s  tests/hermes_cli/test_kanban_route_preflight.py

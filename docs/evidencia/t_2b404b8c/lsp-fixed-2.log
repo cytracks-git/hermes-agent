@@ -1,0 +1,22 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: detected dubious ownership in repository at '/work'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /work
+▶ launching test runner
+Discovered 1 test files (~11 tests) under ['tests/agent/lsp/test_client_e2e.py']; running with -j 28
+[100.0% |    11/~11 | ✓12 | ✗ 0] ✓ tests/agent/lsp/test_client_e2e.py (12✓, 5.2s)
+
+=== Summary: 1 files, 12 tests passed, 0 failed (100% complete) in 5.2s (28 workers) ===
+  Durations cached to test_durations.json (1 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 5.2s  (runner wall: 5.2s, parallelism: 28x)
+  P50: 5.18s  P90: 5.18s  P95: 5.18s  P99: 5.18s  Max: 5.18s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+      5.18s  tests/agent/lsp/test_client_e2e.py

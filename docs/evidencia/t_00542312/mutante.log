@@ -1,0 +1,22 @@
+WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+uid=502 gid=20(dialout) groups=20(dialout)
+=== MUTANTE HONESTO: modulo presente, sensor NO-OP ===
+=== a suite tem de REPROVAR (senao o teste nao mede comportamento) ===
+                "Hermes's context compressor. This is NOT part of the original tool call and must "
+                "never be reproduced in new output — always write full, untruncated content.⟫"
+            )
+>           with pytest.raises(ValueError, match="truncation marker"):
+E           Failed: DID NOT RAISE ValueError
+
+tests/hermes_cli/test_kanban_corpo_comprimido.py:158: Failed
+=========================== short test summary info ============================
+FAILED tests/hermes_cli/test_kanban_corpo_comprimido.py::test_negativo_sensor_acusa_marcador_terminal[## O defeito\n\nO reposit\xf3rio tem 98 worktrees, e 92 del\u27eaHERMES-CONTEXT-COMPRESSION: 5,455 of 5,655 chars omitted here by Hermes's context compressor. This is NOT part of the original tool call and must never be reproduced in new output \u2014 always write full, untruncated content.\u27eb]
+FAILED tests/hermes_cli/test_kanban_corpo_comprimido.py::test_negativo_sensor_acusa_marcador_terminal[## Como usar\n\nCard parado de prop\xf3sito. Quando quiser publicar p...[truncated]]
+FAILED tests/hermes_cli/test_kanban_corpo_comprimido.py::test_negativo_create_task_recusa_e_nao_persiste
+FAILED tests/hermes_cli/test_kanban_corpo_comprimido.py::test_negativo_add_comment_recusa_e_nao_persiste
+FAILED tests/hermes_cli/test_kanban_corpo_comprimido.py::test_negativo_edit_task_recusa_e_preserva_corpo_anterior
+FAILED tests/hermes_cli/test_kanban_corpo_comprimido.py::test_negativo_specify_triage_recusa
+FAILED tests/hermes_cli/test_kanban_corpo_comprimido.py::test_negativo_grafo_de_filhos_recusa
+FAILED tests/hermes_cli/test_kanban_corpo_comprimido.py::test_rest_do_dashboard_alcanca_a_fronteira
+FAILED tests/hermes_cli/test_kanban_corpo_comprimido.py::test_os_11_registros_do_board_seriam_recusados
+9 failed, 11 passed in 3.39s

@@ -111,6 +111,11 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
                 for (tid, reason) in res.respawn_guarded
             ],
             "rate_limited": res.rate_limited,
+            "route_blocked": [
+                {"task_id": tid, "assignee": who, "kind": kind}
+                for (tid, who, kind) in res.route_blocked
+            ],
+            "shared_quota": res.shared_quota,
             "skipped_locked": res.skipped_locked,
             "memory_pressure": res.memory_pressure,
         }, ascii=True)
@@ -148,6 +153,15 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         )
     for tid, reason in res.respawn_guarded:
         print(f"Guarded ({reason}): {tid}")
+    for tid, who, kind in res.route_blocked:
+        print(f"Route blocked ({who}: {kind}) — card stopped before burning a run: {tid}")
+    if res.shared_quota:
+        linha = kbd._describe_shared_quota(res.shared_quota)
+        if linha:
+            print(
+                f"Shared quota: {linha}. These profiles compete for ONE subscription "
+                f"ceiling — concurrency caps promise more parallelism than the quota allows."
+            )
     if res.rate_limited:
         print(f"Rate-limited (released to ready, no failure counted): {', '.join(res.rate_limited)}")
     if res.skipped_locked:
