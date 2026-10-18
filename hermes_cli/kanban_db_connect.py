@@ -860,6 +860,10 @@ _TASK_RUN_COLUMNS = (
     # Spawn-time start fingerprint of the run's worker_pid (PID-reuse guard for the
     # terminal-worker reaper; NULL = legacy row, never signalled).
     ("worker_started_at", "worker_started_at INTEGER"),
+    # Contabilidade da espera humana de aprovacao (contrato t_78aaa333 T-3). DDL
+    # identico ao de SCHEMA_SQL; 0/NULL reproduz o comportamento pre-coluna.
+    ("approval_wait_seconds", "approval_wait_seconds INTEGER NOT NULL DEFAULT 0"),
+    ("approval_paused_at", "approval_paused_at INTEGER"),
 )
 
 
@@ -951,6 +955,15 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
 
     _rebuild_drifted_tables(conn)
 
+    # Journal de aprovacao humana persistente (contrato t_78aaa333 §3.4). Aditivo:
+    # boards antigos ganham a tabela e seguem abrindo (M-1), nenhuma linha de
+    # ``tasks`` e reescrita (M-2), e um board antigo nao tem card em
+    # ``waiting_approval`` para converter (M-3). Fica no fim porque nao depende de
+    # nenhuma coluna migrada acima.
+    from hermes_cli.kanban_db_approvals import APPROVALS_SCHEMA_SQL
+
+    conn.executescript(APPROVALS_SCHEMA_SQL)
+
 
 def _backfill_legacy_inflight_runs(conn: sqlite3.Connection) -> None:
     """One-shot backfill: tasks 'running' before runs existed carried
@@ -1006,14 +1019,15 @@ def _backfill_legacy_inflight_runs(conn: sqlite3.Connection) -> None:
 # for ``kanban_notify_subs``); the additive migrations can't change a column
 # type, so drift requires a rebuild. Each entry pairs the canonical CREATE
 # TABLE with the indexes DROP TABLE takes down with it.
-# ``test_rebuilt_schema_matches_fresh`` guards this against SCHEMA_SQL drift.
+# ``test_a_rebuilt_legacy_board_ends_up_with_the_same_schema_as_a_fresh_one``
+# guards this against SCHEMA_SQL drift.
 # The current schema uses ``INTEGER PRIMARY KEY AUTOINCREMENT`` / ``INTEGER NOT NULL DEFAULT 0``. ``CREATE
 # TABLE IF NOT EXISTS`` skips existing tables regardless of schema and ``_add_column_if_missing`` only adds
 # columns, so neither can fix a drifted column type — the table must be rebuilt. See #35096. Each entry
 # pairs the canonical CREATE TABLE with the CREATE INDEX statements that DROP TABLE would otherwise take
 # down with it (including ``idx_events_run``, added by the additive pass above). To guard against this list
-# drifting from SCHEMA_SQL, ``test_rebuilt_schema_matches_fresh`` asserts a rebuilt legacy DB is
-# byte-identical to a fresh one.
+# drifting from SCHEMA_SQL, ``test_a_rebuilt_legacy_board_ends_up_with_the_same_schema_as_a_fresh_one``
+# asserts a rebuilt legacy DB carries the same task_events indexes as a fresh one.
 _REBUILD_SPECS = {
     "task_events": (
         "CREATE TABLE task_events ("
@@ -1022,6 +1036,7 @@ _REBUILD_SPECS = {
         " payload TEXT, created_at INTEGER NOT NULL)",
         (
             "CREATE INDEX idx_events_task ON task_events(task_id, created_at)",
+            "CREATE INDEX idx_events_task_kind ON task_events(task_id, kind, id)",
             "CREATE INDEX idx_events_run ON task_events(run_id, id)",
         ),
     ),
@@ -1038,6 +1053,7 @@ _REBUILD_SPECS = {
         " task_id TEXT NOT NULL, profile TEXT, step_key TEXT,"
         " status TEXT NOT NULL, claim_lock TEXT, claim_expires INTEGER,"
         " worker_pid INTEGER, worker_started_at INTEGER, max_runtime_seconds INTEGER,"
+        " approval_wait_seconds INTEGER NOT NULL DEFAULT 0, approval_paused_at INTEGER,"
         " last_heartbeat_at INTEGER, started_at INTEGER NOT NULL,"
         " ended_at INTEGER, outcome TEXT, summary TEXT, metadata TEXT,"
         " error TEXT)",

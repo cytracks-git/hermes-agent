@@ -1,0 +1,19 @@
+=== ATO 1: pausa segura do Desktop  2026-09-21T01:47:58Z
+--- janela reconferida imediatamente antes:
+=== JANELA  22:47:58  (silencio exigido: 5min)
+--- sessoes desktop com mensagem recente:
+(nenhuma)
+--- backend serve: "active_agents":0 "gateway_busy":false 
+--- turnos em voo (ultimo papel=user):
+(nenhum)
+VEREDITO: JANELA ABERTA
+rc_janela=0
+--- pids antes: app=56897 serve=56920 | PRESERVAR gateway=78236 worker=98991
+--- quit pela via suportada (osascript quit; NAO e sinal, e o mesmo gesto do menu Quit)
+osascript_rc=0
+--- readback apos o quit (2026-09-21T01:48:24Z)
+esperado: 56897 e 56920 AUSENTES (saem com o app, por desenho); 78236 e 98991 VIVOS
+  PID STARTED                      COMMAND
+78236 Sun Sep 20 21:51:52 2026     /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main gat
+98991 Sun Sep 20 22:29:37 2026     /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main -p 
+--- nenhum sinal foi enviado a processo algum nesta pausa (osascript quit = gesto de menu)

@@ -1,0 +1,29 @@
+=== clonando a instalacao (somente leitura na origem)
+=== base comum
+base=d7ea741ae04e79fb61b48761af489306b13f1e4a
+commits do alvo ausentes no card: 1674
+commits do card ausentes no alvo: 11
+
+=== MEDICAO: merge de alvo DENTRO do card (merge-tree, sem checkout)
+rc=1
+VEREDITO: CONFLITO
+989e2635512b1bd2389c795c5b19d5a473402f05
+100644 a261db1fb6c1b2960fa34c0f0c9cd0539f364edc 1	tui_gateway/session_notifications.py
+100644 9ca1d31b5f084a5cff0854a6944e84eeed6528c1 2	tui_gateway/session_notifications.py
+100644 b771e8c8205ae581b053beb5f788697bd8a02bdd 3	tui_gateway/session_notifications.py
+
+Auto-merging gateway/kanban_watchers_notifier.py
+Auto-merging hermes_cli/config_defaults.py
+Auto-merging hermes_cli/kanban_db.py
+Auto-merging hermes_cli/kanban_db_dispatch.py
+Auto-merging plugins/kanban/dashboard/dist/index.js
+Auto-merging plugins/kanban/dashboard/plugin_api.py
+Auto-merging tests/hermes_cli/test_kanban_db.py
+Auto-merging tests/plugins/test_kanban_dashboard_plugin.py
+Auto-merging tui_gateway/session_notifications.py
+CONFLICT (content): Merge conflict in tui_gateway/session_notifications.py
+
+=== CONTROLE POSITIVO: um conflito fabricado TEM de acusar
+arquivo escolhido (a main mexeu nele): acp_adapter/commands.py
+rc do controle positivo=1
+CONTROLE POSITIVO OK: o medidor acusa conflito quando ele existe

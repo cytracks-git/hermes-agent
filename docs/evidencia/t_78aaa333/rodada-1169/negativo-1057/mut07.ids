@@ -1,0 +1,1 @@
+tests/hermes_cli/test_kanban_approval_diagnostics.py::test_progress_events_never_reach_a_notification_or_wake_path

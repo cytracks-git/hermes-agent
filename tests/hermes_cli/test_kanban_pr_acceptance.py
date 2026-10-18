@@ -25,8 +25,10 @@ def github(tmp_path, monkeypatch):
                     "state": state.get("pr_state", "OPEN"),
                     "isDraft": bool(state.get("is_draft")),
                     "mergeCommit": {"oid": sha} if state.get("pr_state") == "MERGED" else None,
-                    "baseRef": {"branchProtectionRule": {"requiredStatusChecks": [
-                        {"context": "required", "app": {"databaseId": 1}}]}}}}}}
+                    "baseRef": {"branchProtectionRule": {"requiredStatusChecks": (
+                        [] if state.get("no_required") else
+                        [{"context": "required", "app": {"databaseId": 1}}]
+                    )}}}}}}
             elif "/rules/branches/" in self.path:
                 value = [[]]
             elif "/check-runs" in self.path:
@@ -237,3 +239,20 @@ def test_acceptance_receipts_and_terminal_write_share_run_ownership(github):
             assert kb.get_task(conn, tid).status != "done"
             assert conn.execute("SELECT count(*) FROM task_events WHERE task_id=? AND kind='pr_acceptance'", (tid,)).fetchone()[0] == 0
             github.pop("race")
+
+
+def test_merged_without_required_checks_measures_ancestry_open_still_missing(github):
+    """Fork with required=[] must not refuse MERGED+ancestral; OPEN still missing."""
+    from hermes_cli.kanban_pr_acceptance import collect_acceptance
+
+    sha = "a" * 40
+    github.update(conclusion="success", head=sha, no_required=True, pr_state="OPEN")
+    open_receipt = collect_acceptance("https://github.com/acme/repo/pull/7", None)
+    assert open_receipt["ok"] is False
+    assert open_receipt["sha_is_ancestor_of_base"] is False
+
+    github.update(pr_state="MERGED", compare_status="ahead")
+    merged = collect_acceptance("https://github.com/acme/repo/pull/7", None)
+    assert merged["ok"] is True
+    assert merged["classification"] == "success"
+    assert merged["sha_is_ancestor_of_base"] is True

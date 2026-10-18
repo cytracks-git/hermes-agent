@@ -60,7 +60,7 @@ import { ChatBar, ChatBarFallback } from './composer'
 import { FloatingComposerSurface } from './composer/floating-surface'
 import { requestComposerInsert } from './composer/focus'
 import { droppedFileInlineRefs } from './composer/inline-refs'
-import { ComposerSurfaceProvider, useComposerScope, useComposerSurfaceId } from './composer/scope'
+import { ComposerScopeProvider, ComposerSurfaceProvider, useComposerScope, useComposerSurfaceId } from './composer/scope'
 import type { ChatBarState } from './composer/types'
 import { useHistoryWindow } from './history-window'
 import { type DroppedFile, partitionDroppedFiles } from './hooks/use-composer-actions'
@@ -261,6 +261,20 @@ export function ChatRuntimeBoundary({
     ? { connectionId: ownerConnection, profile: ownerProfile }
     : undefined, [ownerConnection, ownerProfile])
 
+  // A Bot chat opened IN PLACE in the main pane (openStoredBotChat) keeps the
+  // active profile, so the ambient scope carries no owner. Publish the session
+  // owner hint's (connection, profile) here so voice playback speaks with the
+  // Bot's own voice; a tile's scope already names its owner and is kept as is.
+  const parentScope = useComposerScope()
+
+  const composerScope = useMemo(
+    () =>
+      parentScope.profile || !ownerProfile
+        ? parentScope
+        : { ...parentScope, connectionId: ownerConnection || undefined, profile: ownerProfile },
+    [ownerConnection, ownerProfile, parentScope]
+  )
+
   const history = useHistoryWindow({
     scopeKey: JSON.stringify([runtimeId, storedId, tailProfile, connectionId, activeProfile, suppressMessages]),
     storedId,
@@ -393,15 +407,26 @@ export function ChatRuntimeBoundary({
       // Submission is handled explicitly by ChatBar.
       // Keeping this no-op avoids duplicate prompt.submit calls.
     },
-    onEdit: isHistorical ? undefined : onEdit,
+    // Editing stays AVAILABLE on a history page. `isDisabled` above blocks
+    // submit/reload/branch and keeps the page static, but the rail jump is
+    // the only way into that page and it has no in-thread exit — so dropping
+    // `onEdit` left the inline composer unopenable after ANY far rail jump
+    // (the throw "Runtime does not support editing", infectious downward,
+    // healed only by the floating jump button's returnToLatest). `editMessage`
+    // already resolves its target against the live session store
+    // (use-prompt-actions), never the display page, so the edit is correct;
+    // sending one rewinds the live transcript and drops the page.
+    onEdit,
     onCancel: isHistorical ? undefined : async () => onCancel(),
     onReload: isHistorical ? undefined : onReload
   })
 
   return (
-    <TranscriptWindowProvider value={transcriptWindow}>
-      <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
-    </TranscriptWindowProvider>
+    <ComposerScopeProvider value={composerScope}>
+      <TranscriptWindowProvider value={transcriptWindow}>
+        <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
+      </TranscriptWindowProvider>
+    </ComposerScopeProvider>
   )
 }
 

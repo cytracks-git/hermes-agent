@@ -1,0 +1,1 @@
+tests/hermes_cli/test_kanban_approval_wait.py::test_orphan_predicate_covers_every_unapplied_state

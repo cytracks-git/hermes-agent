@@ -1,0 +1,13 @@
+=== ANTES  pid_arquivo=31800 code_sha=d7ea741ae04e79fb61b48761af489306b13f1e4a
+--- workers vivos antes (nao podem morrer):
+56467 56467 /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main -p arq
+63113 63113 /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main -p exe
+--- enviando SIGUSR1 ao 31800 (drain-aware)
+!!! gateway 31800 AINDA VIVO apos 240s — NAO escalar para SIGKILL; relatar e parar
+=== SIGTERM em 31800  2026-09-21T00:47:49Z
+!!! 31800 AINDA VIVO apos 90s — parar aqui e relatar; NAO usar SIGKILL sem H1
+31800 S    /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main gateway run --ext
+=== antes  2026-09-21T00:52:51Z
+56467 Ss   /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main -p arquiteto
+--- SIGKILL somente em 31800
+docs/evidencia/t_78aaa333/harness/sigkill-gateway-travado.sh: line 31: kill: (31800) - No such process

@@ -46,6 +46,7 @@ type ToastKind = 'error' | 'success' | 'warning'
  *  watcher's ping set (gateway/kanban_watchers.py) minus the intentionally
  *  silent kinds (status/archived/unblocked, which only advance the cursor). */
 const TERMINAL_NOTIFY = new Map<string, { titleKey: string; toast: ToastKind }>([
+  ['approval_requested', { titleKey: 'File approval required', toast: 'warning' }],
   ['blocked', { titleKey: 'notify.blockedTitle', toast: 'warning' }],
   ['block_loop_detected', { titleKey: 'notify.blockLoopTitle', toast: 'warning' }],
   ['completed', { titleKey: 'notify.completedTitle', toast: 'success' }],
@@ -121,6 +122,10 @@ function trimmed(value: unknown): string {
  *  `detail` (see rawErrorFor), and the body is the plain-words i18n hint. */
 function bodyFor(kind: string, ev: CompletionEvent): string {
   const payload = ev.payload
+
+  if (kind === 'approval_requested') {
+    return `Request ${trimmed(payload?.request_id)}. Open File approvals on the task to approve once, deny, or cancel.`
+  }
 
   if (kind === 'completed') {
     return trimmed(payload?.summary)

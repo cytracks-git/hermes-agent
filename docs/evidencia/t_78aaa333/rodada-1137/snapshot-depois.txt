@@ -1,0 +1,24 @@
+=== SNAPSHOT DESKTOP DEPOIS  2026-09-21T01:52:10Z
+--- instalacao
+643ffa7a82c0e2b8491bee7d31f2495242fb3075
+643ffa7a82c fix(t_78aaa333): leitura de diagnostico por request, nao por janela global (1059)
+--- app.asar (bytes, nao fonte)
+tamanho=9022980  mtime=Sep 20 22:49
+sha256=e12f60ebfcf8d9cd35e1dd6256f507f96b88c2272b3d701bc5503c0d91512697
+marcador waiting_approval=0
+marcador retryApprovalNotice=0
+marcador notice-retry=0
+--- app.asar.unpacked/dist (o dist real que o renderer carrega)
+arquivos=421
+marcador waiting_approval=1 arquivo(s)
+--- build stamp (perfil default: e onde o Desktop do operador roda)
+{
+  "contentHash": "0ea1024e267d57c220df41db5e419a36a62f1618697fd4c824a919b41bb93e01",
+  "sourceMode": false,
+  "builtAt": "2026-09-21T01:49:16.344337+00:00"
+}
+--- processos do Desktop (pid + lstart: idade e o que separa bundle novo de velho)
+--- backend serve (filho do app)
+--- gateway (processo separado; nao deve mudar nesta janela)
+pid=78236 gateway_state=running code_sha=643ffa7a82c0e2b8491bee7d31f2495242fb3075 code_version=0.21.3
+=== FIM DESKTOP DEPOIS

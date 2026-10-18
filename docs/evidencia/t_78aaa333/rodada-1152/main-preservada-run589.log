@@ -1,0 +1,26 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python3
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: detected dubious ownership in repository at '/work'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /work
+▶ launching test runner
+Discovered 3 test files (~32 tests) under ['tests/tui_gateway/test_notification_turn_release.py', 'tests/tui_gateway/test_bot_live_owner_delivery.py', 'tests/hermes_cli/test_update_parked_branch_guard.py']; running with -j 28
+[ 18.8% |     6/~32 | ✓6 | ✗0] ✓ tests/tui_gateway/test_bot_live_owner_delivery.py (6✓, 0.9s)
+[ 31.2% |    10/~32 | ✓12 | ✗ 0] ✓ tests/tui_gateway/test_notification_turn_release.py (6✓, 1.5s)
+[100.0% |    32/~32 | ✓34 | ✗ 0] ✓ tests/hermes_cli/test_update_parked_branch_guard.py (22✓, 2.4s)
+
+=== Summary: 3 files, 34 tests passed, 0 failed (100% complete) in 2.4s (28 workers) ===
+  Durations cached to test_durations.json (3 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   3
+  Total subprocess CPU-wall: 4.7s  (runner wall: 2.4s, parallelism: 28x)
+  P50: 1.45s  P90: 2.36s  P95: 2.36s  P99: 2.36s  Max: 2.36s
+  <1s: 1 files (33%)  <2s: 2 files (67%)
+  Top 10 slowest:
+      2.36s  tests/hermes_cli/test_update_parked_branch_guard.py
+      1.45s  tests/tui_gateway/test_notification_turn_release.py
+      0.93s  tests/tui_gateway/test_bot_live_owner_delivery.py

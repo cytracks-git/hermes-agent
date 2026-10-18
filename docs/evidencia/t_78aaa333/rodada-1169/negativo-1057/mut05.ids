@@ -1,0 +1,1 @@
+tests/hermes_cli/test_kanban_approval_diagnostics.py::test_notice_budget_is_durable_per_transport_generation

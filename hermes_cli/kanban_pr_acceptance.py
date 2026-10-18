@@ -76,6 +76,13 @@ def collect_acceptance(contract: str, published_pr: str | None, *, accepted_sha:
         receipt["required"] = [{"context": c, "app_id": a} for c, a in sorted(required, key=str)]
         if not required:
             receipt["detail"] = "No repository-required checks are configured; explicitly use a local-only contract for non-CI tasks."
+            if pr["state"] != "MERGED":
+                return receipt
+            # MERGED: nothing required can fail. Ancestry is still a delivery fact.
+            receipt["classification"] = "success"
+            receipt["ok"] = True
+            compared = _api(f"repos/{repo}/compare/{sha}...{quote(branch, safe='')}")
+            receipt["sha_is_ancestor_of_base"] = compared.get("status") in {"identical", "ahead"}
             return receipt
         pages = _api(f"repos/{repo}/commits/{sha}/check-runs?per_page=100&filter=latest", paginate=True)
         runs = [run for page in pages for run in page["check_runs"]]
