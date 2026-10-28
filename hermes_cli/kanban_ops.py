@@ -58,38 +58,20 @@ def _cmd_tail(args: argparse.Namespace) -> int:
 
 
 def _cmd_dispatch(args: argparse.Namespace) -> int:
-    # Honour kanban.default_assignee, kanban.max_in_progress,
-    # kanban.max_in_progress_per_profile and kanban.max_spawn with the same
-    # semantics as the gateway dispatch path.
-    try:
-        from hermes_cli.config import load_config
-        _cfg = load_config()
-        _kanban_cfg = _cfg.get("kanban", {}) if isinstance(_cfg, dict) else {}
-        default_assignee = (_kanban_cfg.get("default_assignee") or "").strip() or None
-        max_in_progress_per_profile = kbd._positive_int(
-            _kanban_cfg.get("max_in_progress_per_profile"), None
-        )
-        # Memory-derived default when unset — same fallback the gateway applies.
-        max_in_progress = kbd.resolve_max_in_progress(
-            kbd._positive_int(_kanban_cfg.get("max_in_progress"), None)
-        )
-        # CLI --max is the more explicit signal, so it wins over kanban.max_spawn.
-        cli_max = getattr(args, "max", None)
-        max_spawn = (
-            cli_max if cli_max is not None else kbd._positive_int(_kanban_cfg.get("max_spawn"), None)
-        )
-    except Exception:
-        default_assignee = max_in_progress_per_profile = max_in_progress = None
-        max_spawn = getattr(args, "max", None)
+    # Same caps as the gateway dispatch path and the dashboard nudge
+    # (kanban.default_assignee, max_in_progress, max_in_progress_per_profile,
+    # max_spawn), resolved by one shared reader so the three can't drift.
+    caps = kbd.resolve_dispatch_caps()
+    # CLI --max is the more explicit signal, so it wins over kanban.max_spawn.
+    cli_max = getattr(args, "max", None)
+    if cli_max is not None:
+        caps["max_spawn"] = cli_max
     with kbc.connect_closing() as conn:
         res = kbd.dispatch_once(
             conn,
             dry_run=args.dry_run,
-            max_spawn=max_spawn,
-            max_in_progress=max_in_progress,
             failure_limit=getattr(args, "failure_limit", kbd.DEFAULT_FAILURE_LIMIT),
-            default_assignee=default_assignee,
-            max_in_progress_per_profile=max_in_progress_per_profile,
+            **caps,
         )
     if getattr(args, "json", False):
         _print_json({
@@ -134,7 +116,7 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
         print(f"  - {tid}  ->  {who}  @ {ws or '-'}{tag}")
     if res.auto_assigned_default:
         print(
-            f"Auto-assigned to kanban.default_assignee={default_assignee!r}: "
+            f"Auto-assigned to kanban.default_assignee={caps['default_assignee']!r}: "
             f"{', '.join(res.auto_assigned_default)}"
         )
     if res.skipped_unassigned:

@@ -191,6 +191,12 @@ class DispatchResult:
     """Memory pressure that restricted this tick: ``"critical"`` (no new
     workers), ``"elevated"`` (at most one), ``None`` (no restriction).
     Reclaim/promotion bookkeeping still ran; deferred tasks stay queued."""
+    capped: Optional[str] = None
+    """Concurrency cap that spawned nothing this tick: ``"max_spawn=N
+    running=M"`` or ``"max_in_progress=N running=M"``; ``None`` when the
+    budget was positive. The cap holding is steady state, not "stuck" — the
+    stuck warning names it so a tick that spawns 0 under a full host is not
+    read as a broken dispatcher."""
 
 
 def describe_suppression(results: Iterable[Optional["DispatchResult"]]) -> str:
@@ -205,6 +211,7 @@ def describe_suppression(results: Iterable[Optional["DispatchResult"]]) -> str:
     """
     counts: dict[str, int] = {}
     pressure: Optional[str] = None
+    capped: Optional[str] = None
     for res in results:
         if res is None:
             continue
@@ -216,10 +223,45 @@ def describe_suppression(results: Iterable[Optional["DispatchResult"]]) -> str:
             counts["skipped_locked"] = counts.get("skipped_locked", 0) + 1
         if res.memory_pressure:
             pressure = res.memory_pressure
+        if res.capped:
+            capped = res.capped
     parts = [f"{k}={v}" for k, v in sorted(counts.items())]
     if pressure:
         parts.append(f"memory_pressure={pressure}")
+    if capped:
+        parts.append(f"capped({capped})")
     return ", ".join(parts)
+
+
+def resolve_dispatch_caps(cfg: Optional[dict] = None) -> dict:
+    """``dispatch_once`` keyword caps as the gateway dispatcher resolves them.
+
+    One reader for every out-of-gateway entry point (``hermes kanban dispatch``,
+    the dashboard nudge). A nudge that calls ``dispatch_once`` with only
+    ``max_spawn`` spawns past ``kanban.max_in_progress`` and the per-profile
+    cap; the embedded dispatcher then sits at the host cap for ticks on end and
+    logs "stuck" for work it never had budget for. Fails open to no caps only
+    when config can't be read, so a broken config.yaml never bricks dispatch.
+    """
+    if cfg is None:
+        try:
+            from hermes_cli.config import load_config
+            cfg = load_config()
+        except Exception:
+            cfg = {}
+    kanban_cfg = cfg.get("kanban", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(kanban_cfg, dict):
+        kanban_cfg = {}
+    return {
+        "max_spawn": _positive_int(kanban_cfg.get("max_spawn"), None),
+        "max_in_progress": resolve_max_in_progress(
+            _positive_int(kanban_cfg.get("max_in_progress"), None)
+        ),
+        "max_in_progress_per_profile": _positive_int(
+            kanban_cfg.get("max_in_progress_per_profile"), None
+        ),
+        "default_assignee": (kanban_cfg.get("default_assignee") or "").strip() or None,
+    }
 
 
 # Bounded registry of recently-reaped worker exits, filled by the reap loop in
@@ -2379,12 +2421,14 @@ def _tick_spawn_budget(
     # Both ready and review loops consume from the same budget.
     if max_spawn is not None:
         if running_count >= max_spawn:
+            result.capped = f"max_spawn={max_spawn} running={running_count}"
             return False, None
         spawn_budget = max_spawn - running_count
 
     if max_in_progress is not None:
         total_running = running_count + count_running_tasks_other_boards(board)
         if total_running >= max_in_progress:
+            result.capped = f"max_in_progress={max_in_progress} running={total_running}"
             return False, None
         remaining = max_in_progress - total_running
         if spawn_budget is None or spawn_budget > remaining:

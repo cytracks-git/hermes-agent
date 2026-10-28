@@ -1282,10 +1282,20 @@ def get_task_log(task_id: str, tail: Optional[int] = Query(None, ge=1, le=2_000_
 
 
 @router.post("/dispatch")
-def dispatch(dry_run: bool = Query(False), max_n: int = Query(8, alias="max"), board: Optional[str] = Query(None)):
-    """Dispatch nudge so the UI doesn't wait out the 60 s dispatcher tick."""
+def dispatch(dry_run: bool = Query(False), max_n: Optional[int] = Query(None, alias="max"), board: Optional[str] = Query(None)):
+    """Dispatch nudge so the UI doesn't wait out the 60 s dispatcher tick.
+
+    Same caps as the embedded dispatcher (``kanban.max_in_progress``,
+    ``max_in_progress_per_profile``, ``default_assignee``): a nudge that
+    skipped them spawned the whole backlog in one call and the real
+    dispatcher then reported "stuck" at the host cap. ``?max=`` only tightens
+    the per-board concurrency; it never lifts the configured cap."""
+    caps = kbd.resolve_dispatch_caps()
+    if max_n is not None:
+        cfg_spawn = caps["max_spawn"]
+        caps["max_spawn"] = max_n if cfg_spawn is None else min(max_n, cfg_spawn)
     with _board_conn(board) as (board, conn):
-        result = kbd.dispatch_once(conn, dry_run=dry_run, max_spawn=max_n, board=board)
+        result = kbd.dispatch_once(conn, dry_run=dry_run, board=board, **caps)
         try:
             return asdict(result)  # DispatchResult is a dataclass
         except TypeError:
