@@ -95,6 +95,23 @@ def collect_acceptance(contract: str, published_pr: str | None, *, accepted_sha:
                         (app_id in (None, -1) or r["app"]["id"] == app_id)]
             # A legacy status can satisfy an unpinned context, but never a check pinned to an app.
             legacy = [s for s in statuses if s["context"] == context] if app_id in (None, -1) else []
+            # Same rule as the Atlas merge guard (cytracks-atlas #1790): several
+            # check-runs with the same name/app (rerun, older event superseded by a
+            # newer one) are decided by the MOST RECENT only (highest id; GitHub ids
+            # grow monotonically). A cancelled run superseded by a later success is
+            # history, not a required failure. The latest run still decides: if it
+            # is cancelled/failed/pending, completion stays blocked.
+            superseded = []
+            if len(matching) > 1:
+                if any(not isinstance(r["id"], int) or isinstance(r["id"], bool) for r in matching):
+                    raise ValueError("Duplicate check-runs without integer ids cannot be ordered")
+                latest = max(matching, key=lambda r: r["id"])
+                superseded = [r for r in matching if r is not latest]
+                matching = [latest]
+            for old in superseded:
+                receipt["checks"].append({"name": context, "id": old["id"],
+                    "head_sha": old.get("head_sha"), "classification": "superseded",
+                    "conclusion": old.get("conclusion"), "superseded_by": matching[0]["id"]})
             selected = matching + ([max(legacy, key=lambda s: s["id"])] if legacy else [])
             if not selected:
                 outcomes.append("missing")
