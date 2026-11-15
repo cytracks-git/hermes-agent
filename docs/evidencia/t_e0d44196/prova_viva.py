@@ -3,6 +3,10 @@
 Em uma copia do kanban.db: cria um card, bloqueia transient, envelhece o evento,
 roda dispatch_once real com spawn_fn espiao (nenhum worker sobe) e mede.
 Controle negativo: mesmo fluxo com needs_input nao volta.
+
+Rodar com o python do venv do Hermes (~/.hermes/hermes-agent/venv/bin/python);
+o python3 do host nao tem `yaml`. max_spawn=0: o spawn em si nao e exercitado
+aqui, quem cobre e tests/hermes_cli/test_kanban_transient_redispatch.py.
 """
 import json, os, shutil, sqlite3, sys, tempfile
 from pathlib import Path
