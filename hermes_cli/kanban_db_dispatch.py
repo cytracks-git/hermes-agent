@@ -169,6 +169,9 @@ class DispatchResult:
     """Task ids auto-blocked by the spawn-failure circuit breaker."""
     timed_out: list[str] = field(default_factory=list)
     """Task ids whose workers exceeded ``max_runtime_seconds``."""
+    transient_redispatched: list[str] = field(default_factory=list)
+    """Task ids devolvidos a fila por bloqueio ``transient`` vencido
+    (``kanban.transient_redispatch_seconds``)."""
     stale: list[str] = field(default_factory=list)
     """Task ids reclaimed for no heartbeat within ``dispatch_stale_timeout_seconds``."""
     respawn_guarded: list[tuple[str, str]] = field(default_factory=list)
@@ -2347,6 +2350,14 @@ def _run_reclaim_phase(
     result.auto_blocked.extend(getattr(detect_crashed_workers, "_last_auto_blocked", []))
     result.rate_limited.extend(getattr(detect_crashed_workers, "_last_rate_limited", []))
     result.timed_out = enforce_max_runtime(conn)
+    # C2 (t_e0d44196): bloqueio ``transient`` vencido volta a fila sozinho,
+    # uma vez por bloqueio; o disjuntor de recorrencia continua valendo.
+    from hermes_cli.kanban_db_transient import (
+        redispatch_transient_blocks, resolve_transient_redispatch_seconds,
+    )
+    result.transient_redispatched = redispatch_transient_blocks(
+        conn, delay_seconds=resolve_transient_redispatch_seconds(), failure_limit=failure_limit,
+    )
     result.promoted = _kb.recompute_ready(conn, failure_limit=failure_limit)
     from hermes_cli.kanban_delivery_store import reconcile_delivery
     result.delivery_invalidated = reconcile_delivery(conn)
