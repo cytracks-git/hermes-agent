@@ -226,7 +226,12 @@ KANBAN_REQUEST_REVIEW_SCHEMA = _schema(
             "type": "object",
             "description": (
                 "Optional structured handoff facts for the reviewer, such "
-                "as changed_files, tests_run, commit, or decisions."
+                "as changed_files, tests_run, commit, or decisions. When it "
+                "carries published_pr (exact GitHub PR URL, optional head_sha) "
+                "and the reviewer is not the implementer, a '[ci]' child card "
+                "is created for the reviewer, gated on this task and on the "
+                "PR's exact-head CI (latest run per required check), so CI "
+                "waits never block this card."
             ),
             "additionalProperties": True,
         },

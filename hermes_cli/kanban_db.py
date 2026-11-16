@@ -3451,6 +3451,11 @@ def request_review(
             staged = _cleaned_artifact_paths(metadata)
             if staged:
                 payload["artifacts"] = staged
+            from hermes_cli.kanban_review_ci import spawn_ci_child
+
+            ci_child = spawn_ci_child(conn, task_id, metadata, reviewer, implementer)
+            if ci_child:
+                payload["ci_child"] = ci_child
             _append_event(conn, task_id, "review_requested", payload, run_id=run_id)
     except Exception:
         if staged_copies:
