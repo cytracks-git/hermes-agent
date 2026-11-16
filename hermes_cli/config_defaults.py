@@ -1897,6 +1897,11 @@ DEFAULT_CONFIG = {
         # Running tasks with no heartbeat (last_heartbeat_at) for this many seconds are reclaimed to
         # ready on the next tick; a still-running local worker is terminated first. 0 = off.
         "dispatch_stale_timeout_seconds": 14400,
+        # Card bloqueado com kind='transient' volta a fila sozinho depois deste
+        # tempo, UMA vez por bloqueio, com o motivo do bloqueio como handoff
+        # (Prior attempts). Bloqueio transient repetido continua indo a triage
+        # pelo disjuntor de recorrencia. 0 = desligado (so humano desbloqueia).
+        "transient_redispatch_seconds": 600,
         # Each tick, requeue 'running' cards with broken claim bookkeeping (claim_lock or
         # claim_expires NULL with a dead worker) that TTL/crash/stale recovery can't see. False
         # keeps orphans frozen for manual forensics.
