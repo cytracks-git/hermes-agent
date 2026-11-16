@@ -25,8 +25,10 @@ def github(tmp_path, monkeypatch):
                     "state": state.get("pr_state", "OPEN"),
                     "isDraft": bool(state.get("is_draft")),
                     "mergeCommit": {"oid": sha} if state.get("pr_state") == "MERGED" else None,
-                    "baseRef": {"branchProtectionRule": {"requiredStatusChecks": [
-                        {"context": "required", "app": {"databaseId": 1}}]}}}}}}
+                    "baseRef": {"branchProtectionRule": {"requiredStatusChecks": (
+                        [] if state.get("no_required") else
+                        [{"context": "required", "app": {"databaseId": 1}}]
+                    )}}}}}}
             elif "/rules/branches/" in self.path:
                 value = [[]]
             elif "/check-runs" in self.path:
@@ -36,6 +38,7 @@ def github(tmp_path, monkeypatch):
                 if state.get("stale"):
                     run["head_sha"] = "b" * 40
                 runs = [] if state.get("missing") else [run]
+                runs += [{**run, **extra} for extra in state.get("extra_runs", [])]
                 value = [{"total_count": 100 + len(runs), "check_runs": [
                     {**run, "id": 1000 + i, "name": "optional", "conclusion": "skipped"}
                     for i in range(100)]}, {"total_count": 100 + len(runs), "check_runs": runs}]
@@ -237,3 +240,50 @@ def test_acceptance_receipts_and_terminal_write_share_run_ownership(github):
             assert kb.get_task(conn, tid).status != "done"
             assert conn.execute("SELECT count(*) FROM task_events WHERE task_id=? AND kind='pr_acceptance'", (tid,)).fetchone()[0] == 0
             github.pop("race")
+
+
+def test_merged_without_required_checks_measures_ancestry_open_still_missing(github):
+    """Fork with required=[] must not refuse MERGED+ancestral; OPEN still missing."""
+    from hermes_cli.kanban_pr_acceptance import collect_acceptance
+
+    sha = "a" * 40
+    github.update(conclusion="success", head=sha, no_required=True, pr_state="OPEN")
+    open_receipt = collect_acceptance("https://github.com/acme/repo/pull/7", None)
+    assert open_receipt["ok"] is False
+    assert open_receipt["sha_is_ancestor_of_base"] is False
+
+    github.update(pr_state="MERGED", compare_status="ahead")
+    merged = collect_acceptance("https://github.com/acme/repo/pull/7", None)
+    assert merged["ok"] is True
+    assert merged["classification"] == "success"
+    assert merged["sha_is_ancestor_of_base"] is True
+
+
+def test_latest_required_check_run_decides_over_superseded_reruns(github):
+    """Regression (cytracks-atlas #2127): a cancelled run superseded by a later
+    success on the same head is history, not a required failure; the most
+    recent run (highest id) still decides when it is the one that failed."""
+    from hermes_cli.kanban_pr_acceptance import collect_acceptance
+
+    sha = "a" * 40
+    # Older run (id 41) cancelled, rerun (id 42) success -> accepted.
+    github.update(conclusion="success", head=sha, pr_state="MERGED", compare_status="ahead",
+                  extra_runs=[{"id": 41, "conclusion": "cancelled"}])
+    receipt = collect_acceptance("https://github.com/acme/repo/pull/7", None)
+    assert receipt["ok"] is True
+    assert receipt["classification"] == "success"
+    old = [c for c in receipt["checks"] if c.get("id") == 41]
+    assert old and old[0]["classification"] == "superseded" and old[0]["superseded_by"] == 42
+
+    # Negative control: the most recent run is the cancelled/failed one -> still blocked.
+    for latest in ("cancelled", "failure"):
+        github.update(conclusion=latest, extra_runs=[{"id": 41, "conclusion": "success"}])
+        receipt = collect_acceptance("https://github.com/acme/repo/pull/7", None)
+        assert receipt["ok"] is False
+        assert receipt["classification"] == ("infra" if latest == "cancelled" else "failure")
+
+    # Missing required check -> blocked (no superseded history can stand in for it).
+    github.update(conclusion="success", missing=True, extra_runs=[])
+    receipt = collect_acceptance("https://github.com/acme/repo/pull/7", None)
+    assert receipt["ok"] is False
+    assert receipt["classification"] == "missing"

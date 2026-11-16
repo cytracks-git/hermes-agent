@@ -1,0 +1,26 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python3
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: detected dubious ownership in repository at '/work'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /work
+▶ launching test runner
+Discovered 3 test files (~78 tests) under ['tests/hermes_cli/test_kanban_approval_wait.py', 'tests/plugins/test_kanban_dashboard_plugin.py', 'tests/tools/test_file_approval_worker.py']; running with -j 28
+[ 62.8% |    49/~78 | ✓48 | ✗ 0] ✓ tests/plugins/test_kanban_dashboard_plugin.py (48✓ 1s, 8.8s)
+[ 94.9% |    74/~78 | ✓76 | ✗ 0] ✓ tests/hermes_cli/test_kanban_approval_wait.py (28✓, 12.0s)
+[100.0% |    78/~78 | ✓101 | ✗  0] ✓ tests/tools/test_file_approval_worker.py (25✓, 39.6s)
+
+=== Summary: 3 files, 101 tests passed, 0 failed, 1 skipped (100% complete) in 39.6s (28 workers) ===
+  Durations cached to test_durations.json (3 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   3
+  Total subprocess CPU-wall: 60.4s  (runner wall: 39.6s, parallelism: 28x)
+  P50: 11.97s  P90: 39.62s  P95: 39.62s  P99: 39.62s  Max: 39.62s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+     39.62s  tests/tools/test_file_approval_worker.py
+     11.97s  tests/hermes_cli/test_kanban_approval_wait.py
+      8.80s  tests/plugins/test_kanban_dashboard_plugin.py

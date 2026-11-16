@@ -1,0 +1,12 @@
+=== ATO 2 achado: o app REABRIU sozinho no meio do pack e ficou com a arvore deletada
+-- quit confirmado 22:48:24 (56897/56920 ausentes)
+-- novo Hermes.app pid 6990 lstart 22:48:42, ppid=1, launchd tag application.com.nousresearch.hermes
+-- pack comecou depois: staging .staging-6899-1789955333 = 22:48:53
+-- swap renomeou mac-arm64 -> mac-arm64.previous e apagou o .previous
+-- resultado medido: o processo 6990 segura fds de arquivos JA DELETADOS
+Hermes 6990 farantes txt REG 1,17 53152 396377616 /Users/farantes/.hermes/hermes-agent/apps/desktop/release/mac-arm64.previous/Hermes.app/Contents/MacOS/Hermes
+Hermes 6990 farantes 16r REG 1,17 9022980 396377090 /Users/farantes/.hermes/hermes-agent/apps/desktop/release/mac-arm64.previous/Hermes.app/Contents/Resources/app.asar
+-- o diretorio .previous nao existe mais no disco:
+ls: /Users/farantes/.hermes/hermes-agent/apps/desktop/release/mac-arm64.previous: No such file or directory
+-- exe novo no disco (inode diferente do que 6990 carregou):
+409941117 -rwxr-xr-x@ 1 farantes  staff  53152 Sep 20 22:49 /Users/farantes/.hermes/hermes-agent/apps/desktop/release/mac-arm64/Hermes.app/Contents/MacOS/Hermes

@@ -1,0 +1,1 @@
+tests/hermes_cli/test_kanban_approval_wait.py::test_only_one_pending_request_per_run

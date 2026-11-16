@@ -451,7 +451,7 @@ Dispatcher-owned workers receive their task lifecycle tools automatically.
 | `kanban_complete` | Finish with `summary` + `metadata` structured handoff. | at least one of `summary` / `result` |
 | `kanban_request_review` | Start same-card review with a durable `summary`, optional `metadata`, and optional reviewer profile. The task moves to `review`; this is not a block. | `summary` |
 | `kanban_request_changes` | Reviewer verdict from an active review run. Closes that run, reapplies parent gating, and routes the task to its original implementer without block-loop accounting. | `reason` |
-| `kanban_block` | Stop work and route by why: `kind=dependency` (waits in `todo`, auto-resumes when an incomplete parent finishes; with no open parent it is recorded as `needs_input` instead, since the wait could never be satisfied), `needs_input`/`capability`/`transient` (surface to a human). Repeated same-kind re-blocks auto-escalate to `triage`. | `reason` |
+| `kanban_block` | Stop work and route by why: `kind=dependency` (waits in `todo`, auto-resumes when an incomplete parent finishes; with no open parent it is recorded as `needs_input` instead, since the wait could never be satisfied), `needs_input`/`capability` (surface to a human), `transient` (back to the queue on its own after `kanban.transient_redispatch_seconds`, default 600 s, once per block, with the reason in the next worker's "Prior attempts"; `0` makes it wait for a human). Repeated same-kind re-blocks auto-escalate to `triage`. | `reason` |
 | `kanban_heartbeat` | Signal liveness during long operations. Pure side-effect. | — |
 | `kanban_comment` | Append a durable note to the task thread. | `task_id`, `body` |
 | `kanban_attach` | Attach a file to a task by passing its bytes inline (base64); stored under the task's attachments dir (25 MB cap). | file bytes + name |
@@ -764,6 +764,7 @@ hermes dashboard        # "Kanban" tab appears in the nav, after "Skills"
 ### What the plugin gives you
 
 - A **Kanban** tab showing one column per status: `triage`, `todo`, `ready`, `running`, `blocked`, `done` (plus `archived` when the toggle is on).
+  - Queue columns list cards in dispatch order (priority, then oldest first — top card spawns next). The `done` column is history and lists newest-completed first; `hermes kanban list --status done --sort completed-desc` gives the same order on the CLI.
   - `triage` is the parking column for rough ideas. By default (`kanban.auto_decompose: true`), the dispatcher auto-runs the **decomposer** on tasks that land here. The built-in decomposer uses the `auxiliary.kanban_decomposer` model path, reads your profile roster (with descriptions), and fans the task out into a small graph of child tasks routed to the best-fit specialists. The original task stays alive as the parent of every child so its assignee (`kanban.orchestrator_profile`, else the assignee the task already had, else the active default profile) wakes back up to judge completion when everything finishes. Flip the **Orchestration: Auto/Manual** pill at the top of the page (emerald = Auto, muted gray = Manual), or by editing `config.yaml` directly. Both modes coexist with `hermes kanban specify` - that's still available as a single-task spec rewrite when you don't want fan-out.
 - Cards show the task id, title, priority badge, tenant tag, assigned profile, comment/link counts, a **progress pill** (`N/M` children done when the task has dependents), and "created N ago". A per-card checkbox enables multi-select.
 - **Per-profile lanes inside Running** — toolbar checkbox toggles sub-grouping of the Running column by assignee.
@@ -937,7 +938,7 @@ hermes kanban create "<title>" [--body ...] [--assignee <profile>]
                                 [--json]
 hermes kanban list [--mine] [--assignee P] [--status S] [--tenant T] [--archived]
         [--workflow-template-id <id>] [--current-step-key <key>]
-        [--sort created|created-desc|priority|priority-desc|status|assignee|title|updated]
+        [--sort completed-desc|created|created-desc|priority|priority-desc|status|assignee|title|updated]
         [--json]
 hermes kanban show <id> [--json]
 hermes kanban assign <id> <profile>                    # or 'none' to unassign
@@ -1295,11 +1296,14 @@ dispatch and delivery have separate owners:
   `writer` profile's Telegram gets its `completed`/`blocked` message delivered
   by the `writer` gateway, even though the `default` gateway did the
   dispatching.
-- **Route-only multiplex profiles** can use the primary adapter when the
-  subscription's persisted platform, chat, thread, scope and parent-channel
-  anchors resolve to that exact served profile through `gateway.profile_routes`.
-  A connected secondary adapter remains authoritative; a partial secondary
-  adapter registry never falls back to the primary bot. Unmatched, reassigned,
+- **Multiplex profiles pinned by `gateway.profile_routes`** can use the primary
+  adapter when the subscription's persisted platform, chat, thread, scope and
+  parent-channel anchors resolve to that exact served profile through
+  `gateway.profile_routes` and the profile holds no adapter of its own for the
+  subscription's platform. A connected secondary adapter for that platform
+  remains authoritative; adapters the profile runs on *other* platforms do not
+  block delivery (the shared bot is the only credential serving the pinned
+  chat, for inbound turns and notifications alike). Unmatched, reassigned,
   disabled or ambiguous routes remain undelivered and retryable. Old rows
   missing required routing anchors are not guessed into a profile. Wake turns keep
   the destination profile's runtime scope and the authorized transport.
@@ -1394,7 +1398,7 @@ Every transition appends a row to `task_events`. Each row carries an optional `r
 | `blocked` | `{reason, kind, recurrences}` | Worker or human flipped the task to `blocked`. `kind` is the typed block reason (`needs_input`, `capability`, `transient`, or `null` for a generic block); `recurrences` is the unblock-loop counter. A `kind=dependency` block with no incomplete parent lands here as `needs_input` (payload adds `requested_kind: dependency`, `rekind_reason: no_open_parent`) because `todo` would only get it re-promoted and respawned on the next dispatch tick. Synthesizes a zero-duration run when called on a never-claimed task with `--reason`. |
 | `dependency_wait` | `{reason, kind}` or `{reason: parent_not_done, demoted: true, parent}` | Worker blocked with `kind=dependency` while at least one parent is still open — the task is only waiting on another task, so it routes to `todo` (parent-gated, auto-promoted) instead of `blocked` and no recurrence is counted. No human needed. Also emitted when `link`/`kanban_link` puts a `ready` child under a parent that is not `done`: the child drops back to `todo` and this event records why (the `ready → running` claim re-checks parents, so nothing can run it until the parent completes or the link is removed with `hermes kanban unlink`). |
 | `block_loop_detected` | `{reason, kind, recurrences, limit}` | A task was unblocked and re-blocked for the same reason `BLOCK_RECURRENCE_LIMIT` times (default 2). Instead of landing in `blocked` again — where a cron would keep unblocking it — it routes to `triage` for orchestration attention, breaking the unblock↔re-block loop. |
-| `unblocked` | — | `blocked → ready` (or `todo` if parents are still open), either manually or via `/unblock`. Resets the dispatcher's `consecutive_failures` but deliberately preserves `block_recurrences` so the loop breaker keeps its memory. `run_id` is `NULL`. |
+| `unblocked` | manual: `null`, or `{status, resume_status}` when it lands outside plain `ready`; auto: `{status, resume_status, auto: "transient_redispatch", blocked_event_id, delay_seconds, waited_seconds}` | `blocked → ready` (or `todo` if parents are still open). Manual (`/unblock`): resets the dispatcher's `consecutive_failures` but deliberately preserves `block_recurrences` so the loop breaker keeps its memory. Auto: the dispatcher returned a `kind=transient` block to the queue after `kanban.transient_redispatch_seconds`; it keeps `block_kind`/`block_recurrences` and `consecutive_failures`, so a second transient block in a row still goes to `triage` and a card at the failure limit is not resumed. `run_id` is `NULL`. |
 | `archived` | — | Hidden from the default board. If the task was still running, carries the `run_id` of the run that was reclaimed as a side effect. |
 
 **Edits** (human-driven changes that aren't transitions):

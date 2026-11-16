@@ -1,0 +1,1 @@
+tests/hermes_cli/test_kanban_approval_wait.py::test_pause_releases_claim_and_slot_without_ending_the_run

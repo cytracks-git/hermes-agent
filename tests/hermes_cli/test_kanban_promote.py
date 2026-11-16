@@ -64,6 +64,25 @@ def test_promote_stuck_todo_succeeds(conn):
     assert kb.get_task(conn, child).status == "ready"
 
 
+def test_promote_specified_triage_succeeds_empty_still_refused(conn):
+    """Block-loop leftover with body+assignee must promote; unspecified triage must not."""
+    specified = kb.create_task(
+        conn, title="T15 recode", assignee="revisor",
+        body="91 ids recoded. Aceite: parecer do revisor.",
+    )
+    conn.execute("UPDATE tasks SET status='triage' WHERE id=?", (specified,))
+    ok, err = kb.promote_task(conn, specified, actor="rel")
+    assert ok and err is None
+    assert kb.get_task(conn, specified).status == "ready"
+
+    empty = kb.create_task(conn, title="stub", assignee="revisor")
+    conn.execute("UPDATE tasks SET status='triage', body='' WHERE id=?", (empty,))
+    ok2, err2 = kb.promote_task(conn, empty, actor="rel")
+    assert not ok2
+    assert "specify" in (err2 or "")
+    assert kb.get_task(conn, empty).status == "triage"
+
+
 def test_promote_refuses_undone_parent_and_names_the_real_remedy(conn):
     # #106195: promotion must never report a 'ready' that the first claim reverts.
     child, (parent,) = _stuck_todo(conn, parents_done=False)

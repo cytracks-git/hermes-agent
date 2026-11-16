@@ -1,0 +1,1 @@
+tests/hermes_cli/test_kanban_db.py::test_a_rebuilt_legacy_board_ends_up_with_the_same_schema_as_a_fresh_one

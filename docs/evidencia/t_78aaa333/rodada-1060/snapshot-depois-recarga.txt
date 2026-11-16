@@ -1,0 +1,39 @@
+=== SNAPSHOT DEPOIS-RECARGA  2026-09-21T00:53:00Z
+--- instalacao compartilhada (/Users/farantes/.hermes/hermes-agent)
+643ffa7a82c0e2b8491bee7d31f2495242fb3075
+643ffa7a82c fix(t_78aaa333): leitura de diagnostico por request, nao por janela global (1059)
+porcelain:
+?? hermes_cli/kanban_quota.py
+--- worktree do card (/Users/farantes/atlas/wt/kanban-aprovacao-interativa)
+643ffa7a82c0e2b8491bee7d31f2495242fb3075
+porcelain (contagem): 10
+--- fast-forward possivel? (instalado 643ffa7a82c0e2b8491bee7d31f2495242fb3075 ancestral do candidato 643ffa7a82c0e2b8491bee7d31f2495242fb3075)
+FAST-FORWARD OK (0 commits a frente)
+--- marcador waiting_approval no arquivo da instalacao
+9
+--- coluna waiting_approval no painel da instalacao
+7
+--- gateway_state.json
+{"pid":78236,"kind":"hermes-gateway","argv":["/Users/farantes/.hermes/hermes-agent/hermes_cli/main.py","gateway","run","--external-supervisor"],"start_time":178995191257,"hermes_home":"/Users/farantes/.hermes","gateway_state":"running","exit_reason":null,"restart_requested":false,"active_agents":0,"platforms":{},"session_store":{"status":"ok"},"updated_at":"2026-09-21T00:52:50.791338+00:00","code_sha":"643ffa7a82c0e2b8491bee7d31f2495242fb3075","code_version":"0.21.3","active_work":null,"multiplex_standalone_reason":null,"served_profiles":["default","arquiteto","executor","pesquisa","revisor"]}--- board: esquema da aprovacao
+approval_requests
+idx_appr_one_pending_per_run
+idx_events_task_kind
+--- board: tasks por status
+done=122
+archived=53
+triage=45
+blocked=3
+todo=3
+ready=1
+review=1
+running=1
+--- board: contagens (runs / eventos / approval_requests)
+577 / 23527 / 0
+--- board: cards vivos (running/ready/waiting)
+t_a4c2bfbd ready executor pid=0
+t_78aaa333 running arquiteto pid=56467
+--- processos vivos
+56920 Sun Sep 20 21:01:48 2026     /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main --profile def
+78235 /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.stderr_timestamp --error-log /Users/farantes/.h
+78236 /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main gateway run --external-supervisor
+=== FIM DEPOIS-RECARGA

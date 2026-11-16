@@ -1,0 +1,4 @@
+tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[preimage-patch]
+tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[preimage-write]
+tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[symlink-patch]
+tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[symlink-write]

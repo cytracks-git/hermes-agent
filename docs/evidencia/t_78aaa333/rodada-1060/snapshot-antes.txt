@@ -1,0 +1,40 @@
+=== SNAPSHOT ANTES  2026-09-21T00:29:24Z
+--- instalacao compartilhada (/Users/farantes/.hermes/hermes-agent)
+d7ea741ae04e79fb61b48761af489306b13f1e4a
+d7ea741ae04 test(discord): cover the YAML bridge and the global auto_thread gate
+porcelain:
+?? hermes_cli/kanban_quota.py
+--- worktree do card (/Users/farantes/atlas/wt/kanban-aprovacao-interativa)
+643ffa7a82c0e2b8491bee7d31f2495242fb3075
+porcelain (contagem): 7
+--- fast-forward possivel? (instalado d7ea741ae04e79fb61b48761af489306b13f1e4a ancestral do candidato 643ffa7a82c0e2b8491bee7d31f2495242fb3075)
+FAST-FORWARD OK (8 commits a frente)
+--- marcador waiting_approval no arquivo da instalacao
+0
+0
+--- coluna waiting_approval no painel da instalacao
+0
+0
+--- gateway_state.json
+{"pid":31800,"kind":"hermes-gateway","argv":["/Users/farantes/.hermes/hermes-agent/hermes_cli/main.py","gateway","run","--external-supervisor"],"start_time":178986462930,"hermes_home":"/Users/farantes/.hermes","gateway_state":"running","exit_reason":null,"restart_requested":false,"active_agents":0,"platforms":{},"session_store":{"status":"ok"},"updated_at":"2026-09-21T00:29:19.062417+00:00","code_sha":"d7ea741ae04e79fb61b48761af489306b13f1e4a","code_version":"0.21.3","active_work":null,"multiplex_standalone_reason":null,"served_profiles":["default","arquiteto","executor","pesquisa","revisor"]}--- board: esquema da aprovacao
+approval_requests
+idx_appr_one_pending_per_run
+idx_events_task_kind
+--- board: tasks por status
+done=122
+archived=53
+triage=45
+blocked=3
+todo=3
+running=2
+ready=1
+--- board: contagens (runs / eventos / approval_requests)
+577 / 23488 / 0
+--- board: cards vivos (running/ready/waiting)
+t_a4c2bfbd ready executor pid=0
+t_78aaa333 running arquiteto pid=56467
+t_7d326ee7 running executor pid=63113
+--- processos vivos
+31800 Sat Sep 19 21:37:09 2026     /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main gateway run -
+56920 Sun Sep 20 21:01:48 2026     /Users/farantes/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main --profile def
+=== FIM ANTES

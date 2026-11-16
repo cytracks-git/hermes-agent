@@ -120,6 +120,34 @@ export const busyIndicatorWidth = (style: IndicatorStyle, hasDuration: boolean):
   return indicatorFrameWidth(style) + verb + duration
 }
 
+/**
+ * Wall-clock ms for status-rule timers. Frozen while an overlay covers the
+ * rule; re-seeded from `Date.now()` on the reveal RENDER, not a later effect.
+ * Catch-up only in useEffect leaves the first revealed frame stale — Ink's
+ * test renderer commits that frame synchronously, so a 20ms flush can miss
+ * the follow-up setState and assert on ''.
+ */
+function useStatusClock(paused: boolean): number {
+  const [, setTick] = useState(0)
+  const nowRef = useRef(Date.now())
+
+  if (!paused) {
+    nowRef.current = Date.now()
+  }
+
+  useEffect(() => {
+    if (paused) {
+      return
+    }
+
+    const id = setInterval(() => setTick(n => n + 1), 1000)
+
+    return () => clearInterval(id)
+  }, [paused])
+
+  return nowRef.current
+}
+
 function FaceTicker({
   color,
   startedAt,
@@ -133,8 +161,8 @@ function FaceTicker({
 }) {
   const [tick, setTick] = useState(() => Math.floor(Math.random() * 1000))
   const [verbTick, setVerbTick] = useState(() => Math.floor(Math.random() * VERBS.length))
-  const [now, setNow] = useState(() => Date.now())
   const isOccluded = useStore($isStatusRuleOccluded)
+  const now = useStatusClock(isOccluded)
 
   // Pre-compute cadence + verb-visibility for the active style so an
   // `/indicator` switch re-arms the interval (and skips the verb timer
@@ -149,18 +177,14 @@ function FaceTicker({
     // An overlay is painted OVER the status rule (the modal widget slot, or a
     // floating panel growing up over the top rule), so every tick below is a
     // re-render nobody can see — in an Ink TUI that churn reads as the dialog
-    // tearing.  Arm nothing while occluded.  The effect re-runs when the rule
-    // is revealed again and re-seeds `now` from the wall clock, so the elapsed
-    // read-out resumes live rather than frozen at the moment it was covered.
+    // tearing.  Arm nothing while occluded.  Duration catch-up is in
+    // `useStatusClock` on the reveal render, not here.
     // See `$isStatusRuleOccluded` for why this is NOT `$isBlocked`.
     if (isOccluded) {
       return
     }
 
-    setNow(Date.now())
-
     const glyph = setInterval(() => setTick(n => n + 1), intervalMs)
-    const clock = setInterval(() => setNow(Date.now()), 1000)
     // Verb timer is gated on `displayVerb` — `unicode` style hides the verb
     // entirely, so cycling `verbTick` would be an avoidable re-render. A
     // frozen override does not rotate.
@@ -168,7 +192,6 @@ function FaceTicker({
 
     return () => {
       clearInterval(glyph)
-      clearInterval(clock)
 
       if (verb !== null) {
         clearInterval(verb)
@@ -395,22 +418,8 @@ function SpawnHud({ t }: { t: Theme }) {
 }
 
 function SessionDuration({ startedAt }: { startedAt: number }) {
-  const [now, setNow] = useState(() => Date.now())
   const isOccluded = useStore($isStatusRuleOccluded)
-
-  useEffect(() => {
-    // Paused only while an overlay actually covers the status rule — see
-    // FaceTicker.  The `setNow` below already re-seeds from the wall clock
-    // on every re-arm, so it doubles as the reveal catch-up.
-    if (isOccluded) {
-      return
-    }
-
-    setNow(Date.now())
-    const id = setInterval(() => setNow(Date.now()), 1000)
-
-    return () => clearInterval(id)
-  }, [isOccluded, startedAt])
+  const now = useStatusClock(isOccluded)
 
   return fmtDuration(now - startedAt)
 }
@@ -418,32 +427,29 @@ function SessionDuration({ startedAt }: { startedAt: number }) {
 function IdleSince({ endedAt }: { endedAt: number }) {
   // Time since the last final agent response. Re-ticks every second like
   // SessionDuration so the read-out stays live while the session idles.
-  const [now, setNow] = useState(() => Date.now())
   const isOccluded = useStore($isStatusRuleOccluded)
-
-  useEffect(() => {
-    // Paused only while an overlay actually covers the status rule — see
-    // FaceTicker.  The `setNow` below re-seeds from the wall clock on reveal
-    // so the idle read-out is not frozen when the overlay closes.
-    if (isOccluded) {
-      return
-    }
-
-    setNow(Date.now())
-    const id = setInterval(() => setNow(Date.now()), 1000)
-
-    return () => clearInterval(id)
-  }, [endedAt, isOccluded])
+  const now = useStatusClock(isOccluded)
 
   return `✓ ${fmtDuration(now - endedAt)}`
 }
 
-const effortLabel = (effort?: string) => {
+// `wire` is the level the route actually sends (session.info.reasoning_effort_wire):
+// a clamped Hermes step such as `ultra` reads `ultra→max`, like the CLI's
+// "ultra (sends max on this route)", never as a distinct wire level (#61634).
+const effortLabel = (effort?: string, wire?: string) => {
   const value = String(effort ?? '')
     .trim()
     .toLowerCase()
 
-  return value && value !== 'medium' && value !== 'normal' && value !== 'default' ? value : ''
+  const sent = String(wire ?? '')
+    .trim()
+    .toLowerCase()
+
+  if (!value || value === 'medium' || value === 'normal' || value === 'default') {
+    return ''
+  }
+
+  return sent && sent !== value ? `${value}→${sent}` : value
 }
 
 const shortModelLabel = (model: string) =>
@@ -456,8 +462,8 @@ const shortModelLabel = (model: string) =>
     .replace(/\b(\d+)\s+(\d+)\b/g, '$1.$2')
     .trim()
 
-const modelLabel = (model: string, effort?: string, fast?: boolean) =>
-  [shortModelLabel(model), effortLabel(effort), fast ? 'fast' : ''].filter(Boolean).join(' ')
+const modelLabel = (model: string, effort?: string, fast?: boolean, effortWire?: string) =>
+  [shortModelLabel(model), effortLabel(effort, effortWire), fast ? 'fast' : ''].filter(Boolean).join(' ')
 
 export function GoodVibesHeart({ tick, t }: { tick: number; t: Theme }) {
   const [active, setActive] = useState(false)
@@ -497,6 +503,7 @@ export function StatusRule({
   model,
   modelFast,
   modelReasoningEffort,
+  modelReasoningEffortWire,
   indicatorStyle = 'kaomoji',
   notice,
   usage,
@@ -533,7 +540,7 @@ export function StatusRule({
       : ''
 
   const bar = !segs.compactCtx && usage.context_max && ok('context_pct') ? ctxBar(pct) : ''
-  const modelText = modelLabel(model, modelReasoningEffort, modelFast)
+  const modelText = modelLabel(model, modelReasoningEffort, modelFast, modelReasoningEffortWire)
 
   // Battery read-out — the first (pinned) status-bar element when enabled.
   const showBattery = !!battery && battery.available && battery.percent != null && ok('battery')
@@ -948,6 +955,7 @@ interface StatusRuleProps {
   model: string
   modelFast?: boolean
   modelReasoningEffort?: string
+  modelReasoningEffortWire?: string
   indicatorStyle?: IndicatorStyle
   notice?: Notice | null
   sessionStartedAt?: null | number

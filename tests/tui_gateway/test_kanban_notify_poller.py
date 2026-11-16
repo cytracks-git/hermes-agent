@@ -55,6 +55,54 @@ def _sub_rows(tid: str) -> list:
         conn.close()
 
 
+def test_approval_notice_retries_failed_transport_without_waking_model(tmp_path, monkeypatch):
+    import io
+    import json
+    import threading
+    from hermes_cli import kanban_db_approvals as journal
+    from tui_gateway import server
+    from tui_gateway.transport import StdioTransport
+
+    tid = _create_subscribed_task()
+    conn = kbc.connect()
+    try:
+        kb.recompute_ready(conn)
+        task = kb.claim_task(conn, tid)
+        with kb.write_txn(conn):
+            request = journal.create_request(
+                conn, task_id=tid, run_id=task.current_run_id, claim_lock=task.claim_lock,
+                profile_home=str(tmp_path), session_key=SESSION_KEY, workspace_path=str(tmp_path),
+                created_by_pid=123, created_by_started_at="fixture", payload={"targets": []})
+            kb.pause_for_approval(conn, tid, request_id=request.request_id,
+                                  request_hash=request.request_hash, expected_run_id=task.current_run_id)
+        session = {"session_key": SESSION_KEY, "history_lock": threading.RLock()}
+        stream = io.StringIO()
+        session["transport"] = StdioTransport(lambda: stream, threading.Lock())
+        monkeypatch.setitem(server._sessions, "approval-ui", session)
+        def no_model(*args, **kwargs):
+            raise AssertionError("Human approval must not wake a model")
+        monkeypatch.setattr(server, "_notif_submit", no_model)
+        assert _collect_kanban_notifications(_session("wrong-session")) == []
+        stream.close()
+        server._notif_poll_kanban_scoped("approval-ui", session)
+        assert _sub_rows(tid)[0]["last_ping_event_id"] == 0
+        assert journal.get_request(conn, request.request_id).state == journal.PENDING
+        assert kb.get_task(conn, tid).status == "waiting_approval"
+        stream = io.StringIO()
+        server._notif_poll_kanban_scoped("approval-ui", session)
+        frames = [json.loads(line) for line in stream.getvalue().splitlines()]
+        assert len(frames) == 1
+        assert frames[0]["params"]["session_id"] == "approval-ui"
+        assert request.request_id in frames[0]["params"]["payload"]["text"]
+        receipt = _sub_rows(tid)[0]
+        assert receipt["last_ping_event_id"] == receipt["last_event_id"] > 0
+        server._notif_poll_kanban_scoped("approval-ui", session)
+        assert len(stream.getvalue().splitlines()) == 1
+        assert not session.get("_kanban_pending")
+    finally:
+        conn.close()
+
+
 class TestCollectKanbanNotifications:
     def test_zero_sub_board_is_never_opened_writable(self):
         conn = kbc.connect()

@@ -1,0 +1,22 @@
+▶ skipping venv without pytest: /tmp/work/.venv
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python3
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: not a git repository: /Users/farantes/.hermes/hermes-agent/.git/worktrees/kanban-aprovacao-interativa
+▶ launching test runner
+Discovered 2 test files (~27 tests) under ['tests/tools/test_file_approval_worker.py', 'tests/hermes_cli/test_kanban_approval_wait.py']; running with -j 28
+[ 92.6% |    25/~27 | ✓28 | ✗ 0] ✓ tests/hermes_cli/test_kanban_approval_wait.py (28✓, 10.7s)
+[100.0% |    27/~27 | ✓39 | ✗ 0] ✓ tests/tools/test_file_approval_worker.py (11✓, 15.6s)
+
+=== Summary: 2 files, 39 tests passed, 0 failed (100% complete) in 15.6s (28 workers) ===
+  Durations cached to test_durations.json (2 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   2
+  Total subprocess CPU-wall: 26.2s  (runner wall: 15.6s, parallelism: 28x)
+  P50: 15.59s  P90: 15.59s  P95: 15.59s  P99: 15.59s  Max: 15.59s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+     15.59s  tests/tools/test_file_approval_worker.py
+     10.65s  tests/hermes_cli/test_kanban_approval_wait.py

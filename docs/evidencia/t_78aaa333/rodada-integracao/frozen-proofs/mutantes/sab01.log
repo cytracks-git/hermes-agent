@@ -1,0 +1,55 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python3
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: not a git repository (or any of the parent directories): .git
+▶ launching test runner
+Discovered 1 test files (~4 tests) under ['tests/tools/test_file_approval_worker.py']; running with -j 28
+[100.0% |     4/~4 | ✓20 | ✗ 5] ✗ tests/tools/test_file_approval_worker.py (20✓ 5✗, 36.6s)
+
+  ╔╍ Failed: tests/tools/test_file_approval_worker.py ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+  ║ /usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+  ║ The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+  ║ 
+  ║   warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+  ║ ....FFFF...........F.....                                                [100%]
+  ║ =========================== short test summary info ============================
+  ║ FAILED tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[preimage-write]
+  ║ FAILED tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[preimage-patch]
+  ║ FAILED tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[symlink-write]
+  ║ FAILED tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[symlink-patch]
+  ║ FAILED tests/tools/test_file_approval_worker.py::test_two_real_workers_cannot_both_apply_the_same_preimage
+  ║ 5 failed, 20 passed in 35.70s
+  ║
+  ║  Repro: python -m pytest tests/tools/test_file_approval_worker.py --tb=no -rf -q
+  ╚╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+
+=== Summary: 1 files, 20 tests passed, 5 failed (100% complete) in 36.6s (28 workers) ===
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 36.6s  (runner wall: 36.6s, parallelism: 28x)
+  P50: 36.63s  P90: 36.63s  P95: 36.63s  P99: 36.63s  Max: 36.63s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+     36.63s  tests/tools/test_file_approval_worker.py
+
+=== Failure output ===
+
+--- tests/tools/test_file_approval_worker.py ---
+/usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+....FFFF...........F.....                                                [100%]
+=========================== short test summary info ============================
+FAILED tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[preimage-write]
+FAILED tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[preimage-patch]
+FAILED tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[symlink-write]
+FAILED tests/tools/test_file_approval_worker.py::test_real_worker_waits_and_writes_only_the_approved_preimage[symlink-patch]
+FAILED tests/tools/test_file_approval_worker.py::test_two_real_workers_cannot_both_apply_the_same_preimage
+5 failed, 20 passed in 35.70s
+
+=== 1 file with test failures (5 tests failed) ===
+  tests/tools/test_file_approval_worker.py  (5 tests failed)

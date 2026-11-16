@@ -1,0 +1,27 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: not a git repository: /Users/farantes/.hermes/hermes-agent/.git/worktrees/kanban-aprovacao-interativa
+▶ launching test runner
+Discovered 5 test files (~25 tests) under ['tests/tools/test_file_approval_worker.py', 'tests/plugins/test_kanban_file_approval_api.py', 'tests/tui_gateway/test_kanban_notify_poller.py', 'tests/tui_gateway/test_diagnostic_notification_presentation.py', 'tests/gateway/test_kanban_notice_copy.py']; running with -j 28
+[ 12.0% |     3/~25 | ✓3 | ✗0] ✓ tests/gateway/test_kanban_notice_copy.py (3✓, 1.1s)
+[ 20.0% |     5/~25 | ✓7 | ✗0] ✓ tests/tui_gateway/test_diagnostic_notification_presentation.py (4✓, 1.1s)
+[ 28.0% |     7/~25 | ✓11 | ✗ 0] ✓ tests/plugins/test_kanban_file_approval_api.py (4✓, 1.9s)
+[ 88.0% |    22/~25 | ✓26 | ✗ 0] ✓ tests/tui_gateway/test_kanban_notify_poller.py (15✓, 4.3s)
+[100.0% |    25/~25 | ✓50 | ✗ 0] ✓ tests/tools/test_file_approval_worker.py (24✓, 35.0s)
+
+=== Summary: 5 files, 50 tests passed, 0 failed (100% complete) in 35.0s (28 workers) ===
+  Durations cached to test_durations.json (5 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   5
+  Total subprocess CPU-wall: 43.5s  (runner wall: 35.0s, parallelism: 28x)
+  P50: 1.94s  P90: 35.02s  P95: 35.02s  P99: 35.02s  Max: 35.02s
+  <1s: 0 files (0%)  <2s: 3 files (60%)
+  Top 10 slowest:
+     35.02s  tests/tools/test_file_approval_worker.py
+      4.35s  tests/tui_gateway/test_kanban_notify_poller.py
+      1.94s  tests/plugins/test_kanban_file_approval_api.py
+      1.10s  tests/tui_gateway/test_diagnostic_notification_presentation.py
+      1.08s  tests/gateway/test_kanban_notice_copy.py

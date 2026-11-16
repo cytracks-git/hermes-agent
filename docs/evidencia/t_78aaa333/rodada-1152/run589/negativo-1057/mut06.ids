@@ -1,0 +1,2 @@
+tests/hermes_cli/test_kanban_approval_diagnostics.py::test_a_human_retry_marker_is_not_lost_behind_other_requests
+tests/hermes_cli/test_kanban_approval_diagnostics.py::test_a_human_retry_reopens_the_notice_budget_without_deciding

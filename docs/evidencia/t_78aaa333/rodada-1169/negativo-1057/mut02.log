@@ -1,0 +1,52 @@
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python3
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+fatal: not a git repository (or any parent up to mount point /)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+▶ launching test runner
+Discovered 1 test files (~12 tests) under ['tests/hermes_cli/test_kanban_approval_diagnostics.py']; running with -j 28
+[100.0% |    12/~12 | ✓ 9 | ✗ 3] ✗ tests/hermes_cli/test_kanban_approval_diagnostics.py (9✓ 3✗, 5.1s)
+
+  ╔╍ Failed: tests/hermes_cli/test_kanban_approval_diagnostics.py ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+  ║ /usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+  ║ The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+  ║ 
+  ║   warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+  ║ FF..F.......                                                             [100%]
+  ║ =========================== short test summary info ============================
+  ║ FAILED tests/hermes_cli/test_kanban_approval_diagnostics.py::test_repeated_polls_on_an_unchanged_wait_write_one_observation
+  ║ FAILED tests/hermes_cli/test_kanban_approval_diagnostics.py::test_an_unchanged_wait_stays_silent_however_busy_the_board_gets
+  ║ FAILED tests/hermes_cli/test_kanban_approval_diagnostics.py::test_each_material_change_produces_exactly_one_new_observation
+  ║ 3 failed, 9 passed in 2.13s
+  ║
+  ║  Repro: python -m pytest tests/hermes_cli/test_kanban_approval_diagnostics.py --tb=no -rf -q
+  ╚╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+
+=== Summary: 1 files, 9 tests passed, 3 failed (100% complete) in 5.1s (28 workers) ===
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 5.1s  (runner wall: 5.1s, parallelism: 28x)
+  P50: 5.06s  P90: 5.06s  P95: 5.06s  P99: 5.06s  Max: 5.06s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+      5.06s  tests/hermes_cli/test_kanban_approval_diagnostics.py
+
+=== Failure output ===
+
+--- tests/hermes_cli/test_kanban_approval_diagnostics.py ---
+/usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+FF..F.......                                                             [100%]
+=========================== short test summary info ============================
+FAILED tests/hermes_cli/test_kanban_approval_diagnostics.py::test_repeated_polls_on_an_unchanged_wait_write_one_observation
+FAILED tests/hermes_cli/test_kanban_approval_diagnostics.py::test_an_unchanged_wait_stays_silent_however_busy_the_board_gets
+FAILED tests/hermes_cli/test_kanban_approval_diagnostics.py::test_each_material_change_produces_exactly_one_new_observation
+3 failed, 9 passed in 2.13s
+
+=== 1 file with test failures (3 tests failed) ===
+  tests/hermes_cli/test_kanban_approval_diagnostics.py  (3 tests failed)

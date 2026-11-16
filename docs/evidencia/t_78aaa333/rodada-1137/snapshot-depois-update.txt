@@ -1,0 +1,25 @@
+=== SNAPSHOT DESKTOP DEPOIS-UPDATE  2026-09-21T02:02:24Z
+--- instalacao
+eaef5ec7178d72db91ad6f6d503b83b74c66eb41
+eaef5ec7178 feat(update): hermes update --list-venv-holders prints the venv guard's holders as JSON, exit 3
+--- app.asar (bytes, nao fonte)
+tamanho=9022249  mtime=Sep 20 22:54
+sha256=87f818f5a0d5543ea37ec04dba51d6e2a1103d709cb091e6663ba66e3d550e9a
+marcador waiting_approval=0
+marcador retryApprovalNotice=0
+marcador notice-retry=0
+--- app.asar.unpacked/dist (o dist real que o renderer carrega)
+arquivos=418
+marcador waiting_approval=0 arquivo(s)
+--- build stamp (perfil default: e onde o Desktop do operador roda)
+{
+  "contentHash": "a35f9bd1a7e3f1b7e6ba7c97d591dcce68f3a6505b9d3d6cd0de9fcac798a0a1",
+  "sourceMode": false,
+  "builtAt": "2026-09-21T01:54:59.161665+00:00"
+}
+--- processos do Desktop (pid + lstart: idade e o que separa bundle novo de velho)
+12925 Sun Sep 20 22:55:15 2026     /Users/farantes/.hermes/hermes-agent/apps/desktop/release/mac-arm64/Hermes.app/Contents/MacOS/Hermes
+--- backend serve (filho do app)
+--- gateway (processo separado; nao deve mudar nesta janela)
+pid=78236 gateway_state=stopped code_sha=643ffa7a82c0e2b8491bee7d31f2495242fb3075 code_version=0.21.3
+=== FIM DESKTOP DEPOIS-UPDATE

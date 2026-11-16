@@ -1,0 +1,21 @@
+=== arvore medida: eaef5ec7178d72db91ad6f6d503b83b74c66eb41
+=== runner canonico (nunca pytest cru)
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python3
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+▶ launching test runner
+Discovered 1 test files (~22 tests) under ['tests/hermes_cli/test_update_parked_branch_guard.py']; running with -j 28
+[100.0% |    22/~22 | ✓22 | ✗ 0] ✓ tests/hermes_cli/test_update_parked_branch_guard.py (22✓, 1.6s)
+
+=== Summary: 1 files, 22 tests passed, 0 failed (100% complete) in 1.6s (28 workers) ===
+  Durations cached to test_durations.json (1 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 1.6s  (runner wall: 1.6s, parallelism: 28x)
+  P50: 1.63s  P90: 1.63s  P95: 1.63s  P99: 1.63s  Max: 1.63s
+  <1s: 0 files (0%)  <2s: 1 files (100%)
+  Top 10 slowest:
+      1.63s  tests/hermes_cli/test_update_parked_branch_guard.py
+rc=0

@@ -1,0 +1,130 @@
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+▶ launching test runner
+Discovered 2 test files (~76 tests) under ['tests/tools/test_file_write_safety.py', 'tests/hermes_cli/test_cli_approval_ui.py']; running with -j 28
+[ 21.1% |    16/~76 | ✓16 | ✗ 0] ✓ tests/hermes_cli/test_cli_approval_ui.py (16✓, 4.6s)
+[100.0% |    76/~76 | ✓79 | ✗ 0] ✓ tests/tools/test_file_write_safety.py (63✓, 7.3s)
+
+=== Summary: 2 files, 79 tests passed, 0 failed (100% complete) in 7.3s (28 workers) ===
+  Durations cached to test_durations.json (2 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   2
+  Total subprocess CPU-wall: 11.8s  (runner wall: 7.3s, parallelism: 28x)
+  P50: 7.29s  P90: 7.29s  P95: 7.29s  P99: 7.29s  Max: 7.29s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+      7.29s  tests/tools/test_file_write_safety.py
+      4.56s  tests/hermes_cli/test_cli_approval_ui.py
+▶ no local venv — using Nix dev venv via HERMES_PYTHON: /usr/local/bin/python
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+▶ pre-compiling bytecode cache
+▶ launching test runner
+Discovered 1 test files (~1 tests) under ['tests/hermes_cli/test_kanban_approval.py']; running with -j 28
+[100.0% |     1/~1 | ✓0 | ✗1] ✗ tests/hermes_cli/test_kanban_approval.py (1✗, 2.4s)
+
+  ╔╍ Failed: tests/hermes_cli/test_kanban_approval.py ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+  ║ _____________ test_headless_callback_reports_missing_human_channel _____________
+  ║ 
+  ║ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffff7ce6cfc0>
+  ║ 
+  ║     def test_headless_callback_reports_missing_human_channel(monkeypatch):
+  ║         import cli
+  ║         from tools.approval_prompt import Unanswered
+  ║     
+  ║         instance = cli.HermesCLI.__new__(cli.HermesCLI)
+  ║         instance._app = None
+  ║         instance._approval_lock = threading.Lock()
+  ║         instance._paint_now = Mock()
+  ║         instance._ring_bell = Mock()
+  ║         instance._persist_prompt_summary = Mock()
+  ║         monkeypatch.setitem(cli.CLI_CONFIG, "approvals", {"timeout": 0})
+  ║         monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+  ║         result = instance._approval_callback("<write to AGENTS.md>", "Protected instructions",
+  ║                                              allow_session=False, allow_permanent=False)
+  ║ >       assert isinstance(result, Unanswered), result
+  ║ E       AssertionError: timeout
+  ║ E       assert False
+  ║ E        +  where False = isinstance('timeout', <class 'tools.approval_prompt.Unanswered'>)
+  ║ 
+  ║ tests/hermes_cli/test_kanban_approval.py:20: AssertionError
+  ║ ----------------------------- Captured stdout call -----------------------------
+  ║ 
+  ║   ⏱ Timeout — denying command
+  ║ =========================== short test summary info ============================
+  ║ FAILED tests/hermes_cli/test_kanban_approval.py::test_headless_callback_reports_missing_human_channel
+  ║ ============================== 1 failed in 1.74s ===============================
+  ║
+  ║  Repro: python -m pytest tests/hermes_cli/test_kanban_approval.py
+  ╚╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
+
+
+=== Summary: 1 files, 0 tests passed, 1 failed (100% complete) in 2.4s (28 workers) ===
+
+=== Per-file subprocess time distribution ===
+  Files:   1
+  Total subprocess CPU-wall: 2.4s  (runner wall: 2.4s, parallelism: 28x)
+  P50: 2.43s  P90: 2.43s  P95: 2.43s  P99: 2.43s  Max: 2.43s
+  <1s: 0 files (0%)  <2s: 0 files (0%)
+  Top 10 slowest:
+      2.43s  tests/hermes_cli/test_kanban_approval.py
+
+=== Failure output ===
+
+--- tests/hermes_cli/test_kanban_approval.py ---
+/usr/local/lib/python3.13/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.13.15, pytest-8.3.4, pluggy-1.6.0
+rootdir: /tmp/lab
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, timeout-2.4.0, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+tests/hermes_cli/test_kanban_approval.py F                               [100%]
+
+=================================== FAILURES ===================================
+_____________ test_headless_callback_reports_missing_human_channel _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xffff7ce6cfc0>
+
+    def test_headless_callback_reports_missing_human_channel(monkeypatch):
+        import cli
+        from tools.approval_prompt import Unanswered
+    
+        instance = cli.HermesCLI.__new__(cli.HermesCLI)
+        instance._app = None
+        instance._approval_lock = threading.Lock()
+        instance._paint_now = Mock()
+        instance._ring_bell = Mock()
+        instance._persist_prompt_summary = Mock()
+        monkeypatch.setitem(cli.CLI_CONFIG, "approvals", {"timeout": 0})
+        monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+        result = instance._approval_callback("<write to AGENTS.md>", "Protected instructions",
+                                             allow_session=False, allow_permanent=False)
+>       assert isinstance(result, Unanswered), result
+E       AssertionError: timeout
+E       assert False
+E        +  where False = isinstance('timeout', <class 'tools.approval_prompt.Unanswered'>)
+
+tests/hermes_cli/test_kanban_approval.py:20: AssertionError
+----------------------------- Captured stdout call -----------------------------
+
+  ⏱ Timeout — denying command
+=========================== short test summary info ============================
+FAILED tests/hermes_cli/test_kanban_approval.py::test_headless_callback_reports_missing_human_channel
+============================== 1 failed in 1.74s ===============================
+
+=== 1 file with test failures (1 test failed) ===
+  tests/hermes_cli/test_kanban_approval.py  (1 test failed)
+
+RED_EXIT=1 (expected 1)

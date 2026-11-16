@@ -24,7 +24,7 @@ from tools.binary_extensions import has_binary_extension
 from tools.skill_provenance import is_background_review
 from tools.file_operations import (
     ShellFileOperations, normalize_read_pagination, normalize_search_pagination)
-from tools.file_operations_common import DEFAULT_READ_LIMIT
+from tools.file_operations_common import DEFAULT_READ_LIMIT, count_conflict_blocks
 from tools import file_state
 from agent.redact import _is_secret_file_arg, redact_sensitive_text
 from tools.file_tools_paths import (
@@ -579,7 +579,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
 
     Guard order: NT/device-namespace prefix (raw string, no resolution) →
     device-path blocklist (no I/O) → stat-based special-file guard (host only)
-    → document extraction → binary-extension guard → Hermes internal denylist
+    → Hermes internal denylist → document extraction → binary-extension guard
     → negative-result cache → dedup stub → real read.
     """
     try:
@@ -613,6 +613,14 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
                         "attempted. Use terminal utilities if you need to "
                         "interact with it.")})
 
+        # Hermes internal denylist (prompt injection via catalog metadata,
+        # credential stores). Runs BEFORE document extraction so a
+        # protected SQLite store (state.db) cannot be read through the extractor. Pass the RESOLVED path: the denylist's own
+        # resolve() uses the process cwd and would miss a relative "auth.json".
+        block_error = get_read_block_error(str(_resolved))
+        if block_error:
+            return tool_error(block_error)
+
         extracted = _read_extracted_document(path, _resolved, offset, limit, task_id)
         if extracted is not None:
             return extracted
@@ -623,13 +631,6 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
             return tool_error(
                 f"Cannot read binary file '{path}' ({_resolved.suffix.lower()}). "
                 "Use vision_analyze for images, or terminal to inspect binary files.")
-
-        # Hermes internal denylist (prompt injection via catalog metadata,
-        # credential stores). Pass the RESOLVED path: the denylist's own
-        # resolve() uses the process cwd and would miss a relative "auth.json".
-        block_error = get_read_block_error(str(_resolved))
-        if block_error:
-            return tool_error(block_error)
 
         resolved_str = str(_resolved)
         cached_not_found = _check_not_found_cache("read", resolved_str, task_id)
@@ -679,6 +680,14 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
                 unredacted, file_read=True, secret_file=_is_secret_file_arg(resolved_str))
             redacted = result.content != unredacted
             result_dict["content"] = result.content
+
+        if result.content:
+            conflicts = count_conflict_blocks(result.content)
+            if conflicts:
+                result_dict["conflict_blocks"] = conflicts
+                result_dict["_hint"] = (
+                    f"{conflicts} unresolved git merge-conflict block(s) (<<<<<<< / ======= / >>>>>>>) in this "
+                    "range. Resolve them (keep one side or combine, delete the markers) before editing around them.")
 
         if (file_size and file_size > _LARGE_FILE_HINT_BYTES
                 and limit > 200 and result_dict.get("truncated")):
@@ -826,6 +835,11 @@ def write_file_tool(path: str, content: str, task_id: str = "default",
     (unadvertised in the schema; the mirror rejection error teaches it — the
     cross-PROFILE guard it was named for no longer exists).
     """
+    from tools.file_approval_worker import handle_worker_write
+    handled = handle_worker_write([path], op="write_file", task_id=task_id,
+                                  cross_profile=cross_profile, session_id=session_id, content=content)
+    if handled is not None:
+        return handled
     # write_file checks the binary-document guard before the mirror guard.
     err = (_check_sensitive_path(path, task_id)
            or _check_binary_document_write(path, task_id)
@@ -928,6 +942,13 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
             return collected
         _paths_to_check += collected[0]
         _content_write_paths += collected[1]
+    from tools.file_approval_worker import handle_worker_write
+    handled = handle_worker_write(
+        _paths_to_check, op="multi_patch" if mode == "patch" else "patch", task_id=task_id,
+        cross_profile=cross_profile, session_id=session_id, patch=patch,
+        old_string=old_string, new_string=new_string, replace_all=replace_all)
+    if handled is not None:
+        return handled
     precheck_err = _write_precheck_error(_paths_to_check, _content_write_paths, task_id, cross_profile)
     if precheck_err:
         return tool_error(precheck_err)
@@ -1105,7 +1126,7 @@ READ_FILE_SCHEMA = {
     # route we trust (_read_file_schema_overrides). Scanned-page coverage
     # teaching lives in the response-time NEEDS-OCR warning
     # (read_extract.py); the schema doesn't pre-teach it.
-    "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Documents auto-extract to readable text: .ipynb, Office (.docx/.xlsx/.pptx and legacy .doc/.ppt/.xls), PDF (text layer), OpenDocument, RTF, EPUB. Cannot read images/binary — use vision_analyze for images.",
+    "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Documents auto-extract to readable text: .ipynb, Office (.docx/.xlsx/.pptx and legacy .doc/.ppt/.xls), PDF (text layer), OpenDocument, RTF, EPUB, SQLite (.db/.sqlite: schema, row counts, first rows). Cannot read images/binary — use vision_analyze for images.",
     "parameters": {
         "type": "object",
         "properties": {

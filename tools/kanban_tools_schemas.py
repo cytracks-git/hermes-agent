@@ -146,8 +146,8 @@ KANBAN_COMPLETE_SCHEMA = _schema(
                 "Optional list of absolute paths to deliverable "
                 "files you produced during this run — generated "
                 "charts, PDFs, spreadsheets, images, archives. "
-                "Examples: [\"/tmp/q3-revenue.png\", "
-                "\"/tmp/report.pdf\"]. The gateway notifier "
+                "Examples: [\"~/.hermes/cache/scratch/q3-revenue.png\", "
+                "\"~/.hermes/cache/scratch/report.pdf\"]. The gateway notifier "
                 "uploads each path as a native attachment to the "
                 "subscribed chat (images embed inline, everything "
                 "else uploads as a file) so the deliverable "
@@ -192,7 +192,10 @@ KANBAN_BLOCK_SCHEMA = _schema(
                 "Why you're blocked. 'dependency' waits in todo and "
                 "resumes automatically when an incomplete parent finishes; "
                 "if no parent is open it is recorded as needs_input instead. "
-                "The others surface to a human. Omit only if none apply."
+                "'transient' returns to the queue on its own after a short "
+                "delay, once; your reason becomes the next worker's handoff. "
+                "needs_input and capability surface to a human. Omit only if "
+                "none apply."
             ),
         },
     },
@@ -226,7 +229,12 @@ KANBAN_REQUEST_REVIEW_SCHEMA = _schema(
             "type": "object",
             "description": (
                 "Optional structured handoff facts for the reviewer, such "
-                "as changed_files, tests_run, commit, or decisions."
+                "as changed_files, tests_run, commit, or decisions. When it "
+                "carries published_pr (exact GitHub PR URL, optional head_sha) "
+                "and the reviewer is not the implementer, a '[ci]' child card "
+                "is created for the reviewer, gated on this task and on the "
+                "PR's exact-head CI (latest run per required check), so CI "
+                "waits never block this card."
             ),
             "additionalProperties": True,
         },
@@ -237,7 +245,7 @@ KANBAN_REQUEST_REVIEW_SCHEMA = _schema(
                 "Optional list of absolute paths to deliverable "
                 "files this handoff names — generated charts, "
                 "PDFs, spreadsheets, images, archives. Examples: "
-                "['/tmp/q3-revenue.png', '/tmp/report.pdf']. "
+                "['~/.hermes/cache/scratch/q3-revenue.png', '~/.hermes/cache/scratch/report.pdf']. "
                 "A review handoff is the last implementer "
                 "transition, so the kernel copies these into the "
                 "task's durable attachments before the reviewer's "
