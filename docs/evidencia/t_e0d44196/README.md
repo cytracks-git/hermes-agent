@@ -20,8 +20,8 @@ python do venv do Hermes (`~/.hermes/hermes-agent/venv/bin/python`); o
 - `mutantes_baseline.py <worktree>`: 4 sabotagens no baseline; cada uma tem de
   reprovar `controle_baseline.py`. Inclui o defeito da 1a entrega
   (`kind='transient_retry'`, evento que nenhum codigo emite).
-- `mutantes.sh <worktree>`: 7 sabotagens no codigo do C2; cada uma tem de
-  reprovar `tests/hermes_cli/test_kanban_transient_redispatch.py`.
+- `mutantes.sh <worktree>`: 11 sabotagens no codigo do C2 (M8-M11 cobrem o
+  guarda de transient puro); cada uma tem de reprovar `tests/hermes_cli/test_kanban_transient_redispatch.py`.
 - `prova_viva.py <worktree>`: roda `dispatch_once` real sobre COPIA
   (`sqlite3 backup`) do board atlas, em HERMES_HOME temporario. Nao toca o
   board real nem spawna worker.
@@ -59,6 +59,26 @@ Prova viva na copia do board:
 
 Os 5 cards hoje em `blocked` no board atlas sao `needs_input` ou sem tipo:
 ativar nao move nenhum card existente.
+
+## Guarda de transient puro (t_e146cad1, achado do guardiao t_3066a937)
+
+Defeito: `promote_task` grava `promoted_manual`, nao `unblocked`. Depois de
+promote manual de um card bloqueado por transient, o `blocked` antigo seguia
+como ultimo evento do filtro `blocked/unblocked/block_loop_detected`. Um trip
+sticky posterior do disjuntor (`force_trip`, ex. provider terminal) deixava o
+card `blocked` com `block_kind='transient'` herdado e a varredura o devolvia a
+fila, anulando o trip. Conserto em `kanban_db_transient._is_pure_transient_block`:
+qualquer evento posterior ao `blocked` fora de `_INFORMATIONAL_EVENT_KINDS`
+desqualifica (fail-closed), e trip sticky sem `unblocked` humano tambem.
+
+Medido em 2026-11-16 no worktree do card:
+
+    teste focal: 6 passed (3 novos: sticky apos promote, sticky antes do
+      bloqueio, trip plano apos promote; 1 positivo: comentario/prioridade
+      depois do bloqueio continuam re-despachando)
+    repro anexado pelo guardiao (test_repro_sticky.py): base 0965fb7c20 FALHA
+      "C2 anulou trip sticky do disjuntor"; com o conserto PASSA
+    mutantes.sh: 11/11 mortos (M8 = versao velha sem o guarda)
 
 ## Medir depois — NAO MEDIDO
 

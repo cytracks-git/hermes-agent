@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mutantes do C2 (t_e0d44196): cada sabotagem tem de reprovar o teste focal.
+# Mutantes do C2 (t_e0d44196, guarda t_e146cad1): cada sabotagem tem de reprovar o teste focal.
 # Uso: bash mutantes.sh <worktree>. Restaura os arquivos ao fim de cada mutante.
 set -u
 WT="$1"; cd "$WT" || exit 2
@@ -29,4 +29,13 @@ run ignora_off "$F" "return value if value > 0 else 0" "return value if value > 
 run destrava_breaker "$F" "if _kb._json_dict(last[\"payload\"]).get(\"classified_in_place\"):" "if False:"
 # M7 ignora o limite de falhas do breaker
 run ignora_failure_limit "$F" "if int(row[\"consecutive_failures\"] or 0) >= limit:" "if False:"
+# M8 versao VELHA (pre-t_e146cad1): sem o guarda de transient puro
+run sem_guarda_puro "$F" "if not _is_pure_transient_block(conn, task_id, int(last[\"id\"])):" "if False:"
+# M9 ignora evento de ciclo de vida posterior (promoted_manual/gave_up)
+run ignora_evento_posterior "$F" "    if later is not None:
+        return False" "    pass"
+# M10 ignora trip sticky pendente de unblocked humano
+run ignora_trip_sticky "$F" "return not any(_kb._json_dict(t[\"payload\"]).get(\"sticky\") for t in trips)" "return True"
+# M11 fail-closed demais: evento informativo tambem desqualifica (controle positivo tem de acusar)
+run sem_informativos "$F" "\"commented\", \"attached\", \"edited\", \"reprioritized\", \"linked\", \"unlinked\"," "\"linked\", \"unlinked\","
 rm -f /tmp/mut.$$

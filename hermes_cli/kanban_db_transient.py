@@ -19,6 +19,17 @@ Limites (nao afrouxa nenhum disjuntor):
   transient seguido cai em ``triage`` via ``block_loop_detected`` como hoje;
 - ``consecutive_failures`` NAO e zerado e o limite do breaker e respeitado;
 - so bloqueio feito pelo worker (``classified_in_place`` do breaker fica fora);
+- so o transient PURO: o ``blocked`` transient tem de ser o ultimo evento de
+  ciclo de vida do card. Qualquer evento depois dele fora de
+  ``_INFORMATIONAL_EVENT_KINDS`` (``promoted_manual``, ``gave_up``,
+  ``promoted``, ``reclaimed``...) desqualifica, fail-closed. Sem isso, um
+  promote manual (que grava ``promoted_manual``, nao ``unblocked``) seguido de
+  um trip sticky do disjuntor (``force_trip``) deixava o card ``blocked`` com
+  ``block_kind='transient'`` herdado e a varredura o devolvia a fila,
+  anulando o trip (guardiao t_3066a937);
+- trip sticky (``gave_up`` com ``sticky``) sem ``unblocked`` humano depois
+  tambem desqualifica, mesmo que anterior ao bloqueio: o disjuntor pediu
+  operador e so um ``unblocked`` o libera, como em ``_has_sticky_block``;
 - pais abertos re-gateiam para ``todo``.
 """
 
@@ -32,6 +43,32 @@ from hermes_cli import kanban_db as _kb
 
 DEFAULT_TRANSIENT_REDISPATCH_SECONDS = 600
 AUTO_MARKER = "transient_redispatch"
+
+# Eventos que nunca mudam o status do card: podem aparecer depois do
+# ``blocked`` transient sem tirar a elegibilidade. Lista fechada de proposito:
+# evento novo de ciclo de vida desqualifica ate ser classificado aqui.
+_INFORMATIONAL_EVENT_KINDS = (
+    "commented", "attached", "edited", "reprioritized", "linked", "unlinked",
+    "delivery", "heartbeat",
+)
+
+
+def _is_pure_transient_block(conn: sqlite3.Connection, task_id: str, blocked_event_id: int) -> bool:
+    """True so quando nada alem de evento informativo veio depois do ``blocked``
+    transient e nao ha trip sticky pendente de ``unblocked`` humano."""
+    marks = ", ".join("?" for _ in _INFORMATIONAL_EVENT_KINDS)
+    later = conn.execute(
+        f"SELECT 1 FROM task_events WHERE task_id = ? AND id > ? AND kind NOT IN ({marks}) LIMIT 1",
+        (task_id, blocked_event_id, *_INFORMATIONAL_EVENT_KINDS),
+    ).fetchone()
+    if later is not None:
+        return False
+    trips = conn.execute(
+        "SELECT payload FROM task_events WHERE task_id = ? AND kind = 'gave_up' AND id > COALESCE("
+        "  (SELECT MAX(id) FROM task_events WHERE task_id = ? AND kind = 'unblocked'), 0)",
+        (task_id, task_id),
+    ).fetchall()
+    return not any(_kb._json_dict(t["payload"]).get("sticky") for t in trips)
 
 
 def resolve_transient_redispatch_seconds(kanban_cfg: Optional[dict] = None) -> int:
@@ -78,6 +115,8 @@ def redispatch_transient_blocks(
             if last is None or last["kind"] != "blocked":
                 continue
             if _kb._json_dict(last["payload"]).get("classified_in_place"):
+                continue
+            if not _is_pure_transient_block(conn, task_id, int(last["id"])):
                 continue
             if now - int(last["created_at"] or 0) < delay_seconds:
                 continue

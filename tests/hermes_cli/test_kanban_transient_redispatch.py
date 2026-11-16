@@ -93,3 +93,102 @@ def test_transient_redispatch_off_keeps_block_sticky(kanban_home):
         res = kbd.dispatch_once(conn, spawn_fn=lambda t, ws, board=None: None)
         assert res.transient_redispatched == []
         assert kb.get_task(conn, tid).status == "blocked"
+
+
+def _trip_sticky(conn, tid: str) -> None:
+    """Trip sticky do disjuntor (caminho crash + provider terminal: o chamador
+    ja restaurou a fase, por isso ``release_claim``/``end_run`` desligados)."""
+    assert kbd._record_task_failure(
+        conn, tid, error="401 credencial revogada", outcome="crashed",
+        force_trip=True, release_claim=False, end_run=False,
+        event_payload_extra={"terminal_provider": True},
+    )
+
+
+def test_sticky_trip_after_manual_promote_stays_blocked(kanban_home):
+    """Guardiao t_3066a937: promote manual grava ``promoted_manual`` (nao
+    ``unblocked``), entao o ``blocked`` transient antigo seguia como ultimo
+    evento do filtro; o trip sticky seguinte herdava ``block_kind='transient'``
+    e a varredura anulava o trip. Esperado: so um humano tira o card dali."""
+    _config(kanban_home, 60)
+    with kbc.connect() as conn:
+        tid = kb.create_task(conn, title="t", assignee="alice")
+        assert kb.claim_task(conn, tid) is not None
+        assert kb.block_task(conn, tid, reason="rede caiu", kind="transient")
+        ok, err = kb.promote_task(conn, tid, actor="humano", reason="tenta de novo")
+        assert ok, err
+        _trip_sticky(conn, tid)
+        assert kb.get_task(conn, tid).status == "blocked"
+        conn.execute("UPDATE task_events SET created_at = created_at - 9999 WHERE task_id = ?", (tid,))
+        conn.commit()
+        assert kb.recompute_ready(conn) == 0
+        res = kbd.dispatch_once(conn, spawn_fn=lambda t, ws, board=None: None)
+        assert tid not in res.transient_redispatched
+        assert kb.get_task(conn, tid).status == "blocked"
+        # Humano destrava: o caminho manual continua funcionando.
+        assert kb.unblock_task(conn, tid)
+        assert kb.get_task(conn, tid).status == "ready"
+
+
+def test_sticky_trip_before_transient_block_holds(kanban_home):
+    """Trip sticky ainda sem ``unblocked`` humano, mesmo anterior ao bloqueio
+    transient (promote manual no meio), segura o card: a varredura nao pode
+    ser a primeira a liberar o que o disjuntor mandou para operador."""
+    _config(kanban_home, 60)
+    with kbc.connect() as conn:
+        tid = kb.create_task(conn, title="t", assignee="alice")
+        _trip_sticky(conn, tid)
+        assert kb.get_task(conn, tid).status == "blocked"
+        ok, err = kb.promote_task(conn, tid, actor="humano", reason="forca")
+        assert ok, err
+        assert kb.claim_task(conn, tid) is not None
+        assert kb.block_task(conn, tid, reason="rede caiu", kind="transient")
+        conn.execute("UPDATE task_events SET created_at = created_at - 9999 WHERE task_id = ?", (tid,))
+        conn.commit()
+        res = kbd.dispatch_once(conn, spawn_fn=lambda t, ws, board=None: None)
+        assert tid not in res.transient_redispatched
+        assert kb.get_task(conn, tid).status == "blocked"
+
+
+def test_plain_breaker_trip_after_manual_promote_not_attributed_to_transient(kanban_home):
+    """Bloqueio transient ja consumido pelo promote manual nao volta a valer:
+    um trip PLANO posterior (``gave_up`` sem ``sticky``, julgado pelo contador)
+    seguido de aumento de ``max_retries`` nao pode ser liberado pela varredura
+    em nome de um transient que ja foi atendido."""
+    _config(kanban_home, 60)
+    with kbc.connect() as conn:
+        tid = kb.create_task(conn, title="t", assignee="alice")
+        assert kb.claim_task(conn, tid) is not None
+        assert kb.block_task(conn, tid, reason="rede caiu", kind="transient")
+        ok, err = kb.promote_task(conn, tid, actor="humano", reason="tenta de novo")
+        assert ok, err
+        conn.execute("UPDATE tasks SET max_retries = 1 WHERE id = ?", (tid,))
+        conn.commit()
+        assert kbd._record_task_failure(
+            conn, tid, error="boom", outcome="crashed", release_claim=False, end_run=False,
+        )
+        assert kb.get_task(conn, tid).status == "blocked"
+        conn.execute("UPDATE tasks SET max_retries = 5 WHERE id = ?", (tid,))
+        conn.execute("UPDATE task_events SET created_at = created_at - 9999 WHERE task_id = ?", (tid,))
+        conn.commit()
+        res = kbd.dispatch_once(conn, spawn_fn=lambda t, ws, board=None: None)
+        assert tid not in res.transient_redispatched
+        auto = conn.execute(
+            "SELECT COUNT(*) FROM task_events WHERE task_id = ? AND kind = 'unblocked' "
+            "AND json_extract(payload, '$.auto') = 'transient_redispatch'", (tid,),
+        ).fetchone()[0]
+        assert auto == 0
+
+
+def test_informational_event_after_transient_block_still_redispatches(kanban_home):
+    """Controle positivo do conserto: comentario/anexo/prioridade depois do
+    bloqueio nao mudam status e nao podem matar o re-despacho."""
+    _config(kanban_home, 60)
+    with kbc.connect() as conn:
+        tid = _block_aged(conn, "alice", "transient", "ECONNRESET", 120)
+        kb.add_comment(conn, tid, "humano", "so olhando")
+        kb.edit_task(conn, tid, priority=5)
+        conn.execute("UPDATE task_events SET created_at = created_at - 120 WHERE task_id = ?", (tid,))
+        conn.commit()
+        res = kbd.dispatch_once(conn, spawn_fn=lambda t, ws, board=None: None)
+        assert res.transient_redispatched == [tid]
